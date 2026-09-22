@@ -3,6 +3,7 @@ const cors = require('cors');
 require('dotenv').config();
 
 const apiRoutes = require('./routes/api');
+const authRoutes = require('./routes/auth');
 
 const app = express();
 const PORT = process.env.PORT || 10000;
@@ -22,6 +23,7 @@ app.get('/api/health', (req, res) => {
 
 // Modular API routes
 app.use('/api', apiRoutes);
+app.use('/api/auth', authRoutes);
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
