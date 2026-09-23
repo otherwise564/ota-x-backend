@@ -1,9 +1,12 @@
 const express = require('express');
 const router = express.Router();
 const apiController = require('../controllers/apiController');
+const authMiddleware = require('../middleware/auth');
 
-// Map endpoints directly to controller functions
+// Public status route
 router.get('/status', apiController.getStatus);
-router.get('/profile', apiController.getProfile);
+
+// Protected route (requires valid JWT token)
+router.get('/profile', authMiddleware, apiController.getProfile);
 
 module.exports = router;
