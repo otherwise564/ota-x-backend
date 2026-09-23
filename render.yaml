@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: ota-x-backend
+    env: node
+    buildCommand: npm install && npx prisma db push
+    startCommand: node server.js
+    
