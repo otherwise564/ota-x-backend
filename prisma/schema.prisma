@@ -13,13 +13,67 @@ enum Role {
 }
 
 model User {
-  id               Int      @id @default(autoincrement())
-  username         String   @unique
-  email            String   @unique
+  id               Int        @id @default(autoincrement())
+  username         String     @unique
+  email            String     @unique
   password         String
-  role             Role     @default(USER)
+  role             Role       @default(USER)
   verificationCode String?
-  isVerified       Boolean  @default(false)
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  isVerified       Boolean    @default(false)
+  avatarUrl        String?    // Profile picture
+  bio              String?    // User profile bio
+  posts            Post[]     // Posts created by user
+  likes            Like[]     // Likes given by user
+  comments         Comment[]  // Comments written by user
+  
+  // Follower system (TikTok style: following and followers)
+  followers        Follow[]   @relation("UserFollowers")
+  following        Follow[]   @relation("UserFollowing")
+
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+}
+
+model Post {
+  id        Int       @id @default(autoincrement())
+  caption   String?
+  mediaUrl  String    // Video or image file URL
+  song      String?   // Matched or selected background song track
+  hashtags  String[]  // Extracted hashtags like ["#viral", "#fyp"]
+  mentions  String[]  // Mentioned users like ["@creator"]
+  authorId  Int
+  author    User      @relation(fields: [authorId], references: [id])
+  likes     Like[]    // Likes on this post
+  comments  Comment[] // Comments on this post
+  createdAt DateTime  @default(now())
+}
+
+model Like {
+  id     Int  @id @default(autoincrement())
+  userId Int
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  postId Int
+  post   Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, postId]) // Ensures a user can only like a post once
+}
+
+model Comment {
+  id        Int      @id @default(autoincrement())
+  text      String   // Comment content
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  postId    Int
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+}
+
+model Follow {
+  id          Int  @id @default(autoincrement())
+  followerId  Int
+  follower    User @relation("UserFollowing", fields: [followerId], references: [id], onDelete: Cascade)
+  followingId Int
+  following   User @relation("UserFollowers", fields: [followingId], references: [id], onDelete: Cascade)
+
+  @@unique([followerId, followingId]) // Prevents duplicate follows
 }
