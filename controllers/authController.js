@@ -1,6 +1,16 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const nodemailer = require('nodemailer');
 const prisma = require('../config/db');
+
+// Setup Nodemailer transporter
+const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS
+    }
+});
 
 exports.register = async (req, res) => {
   try {
@@ -32,17 +42,35 @@ exports.register = async (req, res) => {
     // Hash the password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Create the user
+    // Generate a random 6-digit verification code
+    const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+
+    // Create the user with verification fields
     const newUser = await prisma.user.create({
       data: {
         username: username,
         email: email,
-        password: hashedPassword
+        password: hashedPassword,
+        verificationCode: verificationCode,
+        isVerified: false
       }
     });
 
+    // Send the verification email
+    try {
+      await transporter.sendMail({
+          from: process.env.EMAIL_USER,
+          to: email,
+          subject: 'OTA X Verification Code',
+          text: `Your verification code for OTA X is: ${verificationCode}`
+      });
+    } catch (emailError) {
+      console.error('EMAIL SENDING ERROR:', emailError);
+      // We still let registration succeed, but log the email error
+    }
+
     return res.status(201).json({
-      message: 'User registered successfully',
+      message: 'Registration successful! Please check your email for the verification code.',
       user: {
         id: newUser.id,
         username: newUser.username,
@@ -52,11 +80,50 @@ exports.register = async (req, res) => {
     });
 
   } catch (error) {
-    // Show the real error in Render logs while debugging
     console.error('REGISTER ERROR:', error);
-
     return res.status(500).json({
       error: 'Server error during registration.',
+      details: error.message
+    });
+  }
+};
+
+// New Verify Code Function
+exports.verifyCode = async (req, res) => {
+  try {
+    const { email, code } = req.body;
+
+    if (!email || !code) {
+      return res.status(400).json({ error: 'Email and verification code are required.' });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { email: email }
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found.' });
+    }
+
+    if (user.verificationCode !== code) {
+      return res.status(400).json({ error: 'Invalid verification code.' });
+    }
+
+    // Update user to verified and clear the code
+    await prisma.user.update({
+      where: { email: email },
+      data: {
+        isVerified: true,
+        verificationCode: null
+      }
+    });
+
+    return.status(200).json({ message: 'Account verified successfully! You can now log in.' });
+
+  } catch (error) {
+    console.error('VERIFY ERROR:', error);
+    return res.status(500).json({
+      error: 'Server error during verification.',
       details: error.message
     });
   }
@@ -83,6 +150,13 @@ exports.login = async (req, res) => {
     if (!user) {
       return res.status(400).json({
         error: 'Invalid credentials.'
+      });
+    }
+
+    // Check if the user has verified their email
+    if (!user.isVerified) {
+      return res.status(400).json({
+        error: 'Please verify your email address before logging in.'
       });
     }
 
@@ -120,12 +194,11 @@ exports.login = async (req, res) => {
     });
 
   } catch (error) {
-    // Show the real error in Render logs while debugging
     console.error('LOGIN ERROR:', error);
-
     return res.status(500).json({
       error: 'Server error during login.',
       details: error.message
     });
   }
 };
+                             
