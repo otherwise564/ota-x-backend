@@ -88,7 +88,7 @@ exports.register = async (req, res) => {
   }
 };
 
-// New Verify Code Function
+// Verify Code Function (Fixed)
 exports.verifyCode = async (req, res) => {
   try {
     const { email, code } = req.body;
@@ -118,7 +118,7 @@ exports.verifyCode = async (req, res) => {
       }
     });
 
-    return.status(200).json({ message: 'Account verified successfully! You can now log in.' });
+    return res.status(200).json({ message: 'Account verified successfully! You can now log in.' });
 
   } catch (error) {
     console.error('VERIFY ERROR:', error);
@@ -201,4 +201,4 @@ exports.login = async (req, res) => {
     });
   }
 };
-                             
+    
