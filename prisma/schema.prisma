@@ -12,6 +12,22 @@ enum Role {
   ADMIN
 }
 
+enum MessageType {
+  TEXT
+  VOICE
+  IMAGE
+  VIDEO
+}
+
+enum NotificationType {
+  LIKE
+  COMMENT
+  FOLLOW
+  SHARE
+  MESSAGE
+  MENTION
+}
+
 model User {
   id               Int        @id @default(autoincrement())
   username         String     @unique
@@ -20,15 +36,29 @@ model User {
   role             Role       @default(USER)
   verificationCode String?
   isVerified       Boolean    @default(false)
-  avatarUrl        String?    // Profile picture
-  bio              String?    // User profile bio
-  posts            Post[]     // Posts created by user
-  likes            Like[]     // Likes given by user
-  comments         Comment[]  // Comments written by user
-  
-  // Follower system (TikTok style: following and followers)
+
+  avatarUrl        String?
+  bio              String?
+
+  posts            Post[]
+  likes            Like[]
+  comments         Comment[]
+  commentLikes     CommentLike[]
+  favorites        Favorite[]
+  shares           Share[]
+
   followers        Follow[]   @relation("UserFollowers")
   following        Follow[]   @relation("UserFollowing")
+
+  sentMessages     Message[]  @relation("MessageSender")
+  receivedMessages Message[]  @relation("MessageReceiver")
+
+  conversationMembers ConversationMember[]
+
+  notificationsReceived Notification[] @relation("NotificationRecipient")
+  notificationsSent     Notification[] @relation("NotificationActor")
+
+  settings         UserSettings?
 
   createdAt        DateTime   @default(now())
   updatedAt        DateTime   @updatedAt
@@ -37,43 +67,191 @@ model User {
 model Post {
   id        Int       @id @default(autoincrement())
   caption   String?
-  mediaUrl  String    // Video or image file URL
-  song      String?   // Matched or selected background song track
-  hashtags  String[]  // Extracted hashtags like ["#viral", "#fyp"]
-  mentions  String[]  // Mentioned users like ["@creator"]
+  mediaUrl  String
+  song      String?
+  hashtags String[]
+  mentions String[]
+
   authorId  Int
-  author    User      @relation(fields: [authorId], references: [id])
-  likes     Like[]    // Likes on this post
-  comments  Comment[] // Comments on this post
+  author    User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  likes     Like[]
+  comments  Comment[]
+  favorites Favorite[]
+  shares    Share[]
+
   createdAt DateTime  @default(now())
 }
 
 model Like {
   id     Int  @id @default(autoincrement())
+
   userId Int
   user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   postId Int
   post   Post @relation(fields: [postId], references: [id], onDelete: Cascade)
 
-  @@unique([userId, postId]) // Ensures a user can only like a post once
+  createdAt DateTime @default(now())
+
+  @@unique([userId, postId])
+}
+
+model Favorite {
+  id     Int  @id @default(autoincrement())
+
+  userId Int
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  postId Int
+  post   Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, postId])
+}
+
+model Share {
+  id     Int  @id @default(autoincrement())
+
+  userId Int
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  postId Int
+  post   Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
 }
 
 model Comment {
   id        Int      @id @default(autoincrement())
-  text      String   // Comment content
+
+  text      String?
+  voiceUrl  String?
+
   userId    Int
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   postId    Int
   post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  parentId  Int?
+  parent    Comment? @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies   Comment[] @relation("CommentReplies")
+
+  likes     CommentLike[]
+
   createdAt DateTime @default(now())
+
+  @@index([postId])
+  @@index([parentId])
+}
+
+model CommentLike {
+  id        Int      @id @default(autoincrement())
+
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  commentId Int
+  comment   Comment  @relation(fields: [commentId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, commentId])
 }
 
 model Follow {
   id          Int  @id @default(autoincrement())
+
   followerId  Int
   follower    User @relation("UserFollowing", fields: [followerId], references: [id], onDelete: Cascade)
+
   followingId Int
   following   User @relation("UserFollowers", fields: [followingId], references: [id], onDelete: Cascade)
 
-  @@unique([followerId, followingId]) // Prevents duplicate follows
+  createdAt DateTime @default(now())
+
+  @@unique([followerId, followingId])
+}
+
+model Conversation {
+  id        Int                   @id @default(autoincrement())
+  members   ConversationMember[]
+  messages  Message[]
+  createdAt DateTime              @default(now())
+  updatedAt DateTime              @updatedAt
+}
+
+model ConversationMember {
+  id             Int          @id @default(autoincrement())
+
+  conversationId Int
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  userId         Int
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  joinedAt       DateTime     @default(now())
+
+  @@unique([conversationId, userId])
+}
+
+model Message {
+  id             Int           @id @default(autoincrement())
+
+  conversationId Int
+  conversation   Conversation  @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  senderId       Int
+  sender         User          @relation("MessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+
+  receiverId     Int
+  receiver       User          @relation("MessageReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
+
+  type           MessageType   @default(TEXT)
+  text           String?
+  mediaUrl       String?
+  voiceUrl       String?
+
+  isRead         Boolean       @default(false)
+
+  createdAt      DateTime      @default(now())
+}
+
+model Notification {
+  id          Int              @id @default(autoincrement())
+
+  recipientId Int
+  recipient   User             @relation("NotificationRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+
+  actorId     Int?
+  actor       User?            @relation("NotificationActor", fields: [actorId], references: [id], onDelete: Cascade)
+
+  type        NotificationType
+  message     String
+  postId      Int?
+  commentId   Int?
+
+  isRead      Boolean          @default(false)
+
+  createdAt   DateTime         @default(now())
+
+  @@index([recipientId])
+}
+
+model UserSettings {
+  id                  Int      @id @default(autoincrement())
+
+  userId              Int      @unique
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  darkMode            Boolean  @default(true)
+  notifications       Boolean  @default(true)
+  privateAccount      Boolean  @default(false)
+  allowMessages       Boolean  @default(true)
+  allowComments       Boolean  @default(true)
+
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
 }
