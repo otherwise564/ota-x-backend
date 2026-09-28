@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { createPost, getAllPosts } = require('../controllers/postController');
-const authMiddleware = require('../middleware/authMiddleware');
+const authMiddleware = require('../middleware/auth');
 
 // Route to get all posts (public feed)
 router.get('/', getAllPosts);
