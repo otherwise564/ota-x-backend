@@ -8,14 +8,7 @@ exports.repostPost = async (req, res) => {
   try {
     const userId = req.user.id;
     const postId = Number(req.params.postId);
-
-    const {
-      comment
-    } = req.body;
-
-    // ---------------------------------------------------
-    // Validate post ID
-    // ---------------------------------------------------
+    const { comment } = req.body;
 
     if (
       !Number.isInteger(postId) ||
@@ -25,10 +18,6 @@ exports.repostPost = async (req, res) => {
         error: 'Invalid post ID.'
       });
     }
-
-    // ---------------------------------------------------
-    // Check that the post exists
-    // ---------------------------------------------------
 
     const post = await prisma.post.findUnique({
       where: {
@@ -42,13 +31,12 @@ exports.repostPost = async (req, res) => {
       });
     }
 
-    // ---------------------------------------------------
-    // Clean optional repost comment
-    // ---------------------------------------------------
-
     let cleanComment = null;
 
-    if (comment !== undefined && comment !== null) {
+    if (
+      comment !== undefined &&
+      comment !== null
+    ) {
       if (typeof comment !== 'string') {
         return res.status(400).json({
           error: 'Repost comment must be text.'
@@ -68,10 +56,6 @@ exports.repostPost = async (req, res) => {
         cleanComment = null;
       }
     }
-
-    // ---------------------------------------------------
-    // Check whether user already reposted this post
-    // ---------------------------------------------------
 
     const existingRepost =
       await prisma.repost.findUnique({
@@ -97,10 +81,6 @@ exports.repostPost = async (req, res) => {
         repostCount
       });
     }
-
-    // ---------------------------------------------------
-    // Create repost
-    // ---------------------------------------------------
 
     let repost;
 
@@ -135,7 +115,6 @@ exports.repostPost = async (req, res) => {
         }
       });
     } catch (error) {
-      // Handle duplicate repost race condition
       if (error.code === 'P2002') {
         const repostCount =
           await prisma.repost.count({
@@ -154,10 +133,6 @@ exports.repostPost = async (req, res) => {
       throw error;
     }
 
-    // ---------------------------------------------------
-    // Notify original post owner
-    // ---------------------------------------------------
-
     if (post.authorId !== userId) {
       await prisma.notification.create({
         data: {
@@ -169,10 +144,6 @@ exports.repostPost = async (req, res) => {
         }
       });
     }
-
-    // ---------------------------------------------------
-    // Get updated repost count
-    // ---------------------------------------------------
 
     const repostCount =
       await prisma.repost.count({
@@ -209,3 +180,190 @@ exports.unrepostPost = async (req, res) => {
   try {
     const userId = req.user.id;
     const postId = Number(req.params.postId);
+
+    if (
+      !Number.isInteger(postId) ||
+      postId <= 0
+    ) {
+      return res.status(400).json({
+        error: 'Invalid post ID.'
+      });
+    }
+
+    const existingRepost =
+      await prisma.repost.findUnique({
+        where: {
+          userId_postId: {
+            userId,
+            postId
+          }
+        }
+      });
+
+    if (!existingRepost) {
+      const repostCount =
+        await prisma.repost.count({
+          where: {
+            postId
+          }
+        });
+
+      return res.status(200).json({
+        message: 'Post is not reposted.',
+        reposted: false,
+        repostCount
+      });
+    }
+
+    await prisma.repost.delete({
+      where: {
+        userId_postId: {
+          userId,
+          postId
+        }
+      }
+    });
+
+    const repostCount =
+      await prisma.repost.count({
+        where: {
+          postId
+        }
+      });
+
+    return res.status(200).json({
+      message: 'Repost removed successfully.',
+      reposted: false,
+      repostCount
+    });
+
+  } catch (error) {
+    console.error(
+      'UNREPOST POST ERROR:',
+      error
+    );
+
+    return res.status(500).json({
+      error:
+        'Server error while removing repost.'
+    });
+  }
+};
+ // =====================================================
+// GET REPOST STATUS
+// =====================================================
+
+exports.getRepostStatus = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const postId = Number(req.params.postId);
+
+    if (
+      !Number.isInteger(postId) ||
+      postId <= 0
+    ) {
+      return res.status(400).json({
+        error: 'Invalid post ID.'
+      });
+    }
+
+    const repost =
+      await prisma.repost.findUnique({
+        where: {
+          userId_postId: {
+            userId,
+            postId
+          }
+        }
+      });
+
+    const repostCount =
+      await prisma.repost.count({
+        where: {
+          postId
+        }
+      });
+
+    return res.status(200).json({
+      reposted: Boolean(repost),
+      repostCount
+    });
+
+  } catch (error) {
+    console.error(
+      'GET REPOST STATUS ERROR:',
+      error
+    );
+
+    return res.status(500).json({
+      error:
+        'Server error while checking repost status.'
+    });
+  }
+};
+
+// =====================================================
+// GET MY REPOSTS
+// =====================================================
+
+exports.getMyReposts = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    const reposts =
+      await prisma.repost.findMany({
+        where: {
+          userId
+        },
+        orderBy: {
+          createdAt: 'desc'
+        },
+        include: {
+          user: {
+            select: {
+              id: true,
+              username: true,
+              avatarUrl: true,
+              isCreatorVerified: true
+            }
+          },
+          post: {
+            include: {
+              author: {
+                select: {
+                  id: true,
+                  username: true,
+                  avatarUrl: true,
+                  isCreatorVerified: true
+                }
+              },
+              _count: {
+                select: {
+                  likes: true,
+                  comments: true,
+                  favorites: true,
+                  shares: true,
+                  reposts: true
+                }
+              }
+            }
+          }
+        }
+      });
+
+    return res.status(200).json({
+      reposts
+    });
+
+  } catch (error) {
+    console.error(
+      'GET MY REPOSTS ERROR:',
+      error
+    );
+
+    return res.status(500).json({
+      error:
+        'Server error while fetching reposts.'
+    });
+  }
+};
