@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+
 const apiController = require('../controllers/apiController');
 const authMiddleware = require('../middleware/auth');
 const adminMiddleware = require('../middleware/admin');
@@ -8,7 +9,10 @@ const adminMiddleware = require('../middleware/admin');
 // PUBLIC STATUS
 // =====================================================
 
-router.get('/status', apiController.getStatus);
+router.get(
+  '/status',
+  apiController.getStatus
+);
 
 // =====================================================
 // CURRENT USER PROFILE
@@ -18,6 +22,16 @@ router.get(
   '/profile',
   authMiddleware,
   apiController.getProfile
+);
+
+// =====================================================
+// UPDATE CURRENT USER PROFILE
+// =====================================================
+
+router.patch(
+  '/profile',
+  authMiddleware,
+  apiController.updateProfile
 );
 
 // =====================================================
