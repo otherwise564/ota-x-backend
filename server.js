@@ -10,6 +10,7 @@ const commentRoutes = require('./routes/commentRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
 const followRoutes = require('./routes/followRoutes');
 const favoriteRoutes = require('./routes/favoriteRoutes');
+const shareRoutes = require('./routes/shareRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 10000;
@@ -89,6 +90,12 @@ app.use('/api/follows', followRoutes);
 // =====================================================
 
 app.use('/api/favorites', favoriteRoutes);
+
+// =====================================================
+// SHARES
+// =====================================================
+
+app.use('/api/shares', shareRoutes);
 
 // =====================================================
 // START SERVER
