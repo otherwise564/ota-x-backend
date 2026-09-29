@@ -1,12 +1,16 @@
 const prisma = require('../config/db');
 
-// LIKE a post
+// =====================================================
+// LIKE A POST
+// =====================================================
+
 exports.likePost = async (req, res) => {
   try {
     const userId = req.user.id;
     const postId = Number(req.params.postId);
 
-    if (!Number.isInteger(postId)) {
+    // Validate post ID
+    if (!Number.isInteger(postId) || postId <= 0) {
       return res.status(400).json({
         error: 'Invalid post ID.'
       });
@@ -14,7 +18,9 @@ exports.likePost = async (req, res) => {
 
     // Make sure the post exists
     const post = await prisma.post.findUnique({
-      where: { id: postId }
+      where: {
+        id: postId
+      }
     });
 
     if (!post) {
@@ -23,7 +29,7 @@ exports.likePost = async (req, res) => {
       });
     }
 
-    // Check if this user already liked the post
+    // Check whether the user already liked this post
     const existingLike = await prisma.like.findUnique({
       where: {
         userId_postId: {
@@ -35,7 +41,9 @@ exports.likePost = async (req, res) => {
 
     if (existingLike) {
       const likeCount = await prisma.like.count({
-        where: { postId }
+        where: {
+          postId
+        }
       });
 
       return res.status(200).json({
@@ -46,14 +54,36 @@ exports.likePost = async (req, res) => {
     }
 
     // Create the real database like
-    await prisma.like.create({
-      data: {
-        userId,
-        postId
-      }
-    });
+    try {
+      await prisma.like.create({
+        data: {
+          userId,
+          postId
+        }
+      });
+    } catch (error) {
+      // Prisma unique constraint:
+      // another request may have created the like
+      // at almost the same time.
+      if (error.code === 'P2002') {
+        const likeCount = await prisma.like.count({
+          where: {
+            postId
+          }
+        });
 
-    // Notify the post owner, but don't notify yourself
+        return res.status(200).json({
+          message: 'Post already liked.',
+          liked: true,
+          likeCount
+        });
+      }
+
+      throw error;
+    }
+
+    // Create notification for the post owner
+    // Do not notify the user who liked their own post.
     if (post.authorId !== userId) {
       await prisma.notification.create({
         data: {
@@ -67,7 +97,9 @@ exports.likePost = async (req, res) => {
     }
 
     const likeCount = await prisma.like.count({
-      where: { postId }
+      where: {
+        postId
+      }
     });
 
     return res.status(201).json({
@@ -77,22 +109,30 @@ exports.likePost = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('LIKE POST ERROR:', error);
+    console.error(
+      'LIKE POST ERROR:',
+      error
+    );
 
     return res.status(500).json({
-      error: 'Server error while liking post.'
+      error:
+        'Server error while liking post.'
     });
   }
 };
 
 
-// UNLIKE a post
+// =====================================================
+// UNLIKE A POST
+// =====================================================
+
 exports.unlikePost = async (req, res) => {
   try {
     const userId = req.user.id;
     const postId = Number(req.params.postId);
 
-    if (!Number.isInteger(postId)) {
+    // Validate post ID
+    if (!Number.isInteger(postId) || postId <= 0) {
       return res.status(400).json({
         error: 'Invalid post ID.'
       });
@@ -109,7 +149,9 @@ exports.unlikePost = async (req, res) => {
 
     if (!existingLike) {
       const likeCount = await prisma.like.count({
-        where: { postId }
+        where: {
+          postId
+        }
       });
 
       return res.status(200).json({
@@ -129,7 +171,9 @@ exports.unlikePost = async (req, res) => {
     });
 
     const likeCount = await prisma.like.count({
-      where: { postId }
+      where: {
+        postId
+      }
     });
 
     return res.status(200).json({
@@ -139,10 +183,14 @@ exports.unlikePost = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('UNLIKE POST ERROR:', error);
+    console.error(
+      'UNLIKE POST ERROR:',
+      error
+    );
 
     return res.status(500).json({
-      error: 'Server error while unliking post.'
+      error:
+        'Server error while unliking post.'
     });
   }
 };
