@@ -1,29 +1,79 @@
 const prisma = require('../config/db');
 
-// Create a real OTA X post
+// =====================================================
+// CREATE POST
+// =====================================================
+
 exports.createPost = async (req, res) => {
   try {
     const {
       caption,
       mediaUrl,
+      thumbnailUrl,
       mediaType,
+      durationSeconds,
       song,
+      soundUrl,
       hashtags,
       mentions
     } = req.body;
 
+    // The authenticated user's ID comes from JWT middleware
     const authorId = req.user.id;
 
+    // -------------------------------------------------
+    // VALIDATE CONTENT
+    // -------------------------------------------------
+
+    const cleanCaption =
+      typeof caption === 'string'
+        ? caption.trim()
+        : '';
+
+    const cleanMediaUrl =
+      typeof mediaUrl === 'string'
+        ? mediaUrl.trim()
+        : '';
+
+    const cleanThumbnailUrl =
+      typeof thumbnailUrl === 'string'
+        ? thumbnailUrl.trim()
+        : '';
+
+    const cleanSong =
+      typeof song === 'string'
+        ? song.trim()
+        : '';
+
+    const cleanSoundUrl =
+      typeof soundUrl === 'string'
+        ? soundUrl.trim()
+        : '';
+
     // A post must contain text or media
-    if (!caption?.trim() && !mediaUrl) {
+    if (!cleanCaption && !cleanMediaUrl) {
       return res.status(400).json({
         error: 'A post must contain text or media.'
       });
     }
 
-    // Validate media type
-    const allowedMediaTypes = ['TEXT', 'IMAGE', 'VIDEO'];
-    const selectedMediaType = mediaType || (mediaUrl ? 'VIDEO' : 'TEXT');
+    // -------------------------------------------------
+    // VALIDATE MEDIA TYPE
+    // -------------------------------------------------
+
+    const allowedMediaTypes = [
+      'TEXT',
+      'IMAGE',
+      'VIDEO'
+    ];
+
+    let selectedMediaType = mediaType;
+
+    if (!selectedMediaType) {
+      selectedMediaType = cleanMediaUrl
+        ? 'VIDEO'
+        : 'TEXT';
+    }
 
     if (!allowedMediaTypes.includes(selectedMediaType)) {
       return res.status(400).json({
@@ -31,31 +81,114 @@ exports.createPost = async (req, res) => {
       });
     }
 
-    // Clean hashtags and mentions
+    // Text posts should not claim to have media
+    if (
+      selectedMediaType === 'TEXT' &&
+      cleanMediaUrl
+    ) {
+      return res.status(400).json({
+        error:
+          'Text posts cannot contain a media URL.'
+      });
+    }
+
+    // Image/video posts should contain media
+    if (
+      (selectedMediaType === 'IMAGE' ||
+        selectedMediaType === 'VIDEO') &&
+      !cleanMediaUrl
+    ) {
+      return res.status(400).json({
+        error:
+          'Image and video posts require a media URL.'
+      });
+    }
+
+    // -------------------------------------------------
+    // VALIDATE DURATION
+    // -------------------------------------------------
+
+    let cleanDuration = null;
+
+    if (durationSeconds !== undefined && durationSeconds !== null) {
+      const parsedDuration =
+        Number(durationSeconds);
+
+      if (
+        !Number.isFinite(parsedDuration) ||
+        parsedDuration < 0
+      ) {
+        return res.status(400).json({
+          error:
+            'durationSeconds must be a valid positive number.'
+        });
+      }
+
+      cleanDuration = Math.floor(parsedDuration);
+    }
+
+    // -------------------------------------------------
+    // CLEAN HASHTAGS
+    // -------------------------------------------------
+
     const cleanHashtags = Array.isArray(hashtags)
       ? hashtags
           .filter(tag => typeof tag === 'string')
-          .map(tag => tag.trim().replace(/^#/, ''))
+          .map(tag =>
+            tag.trim().replace(/^#/, '')
+          )
           .filter(Boolean)
+          .slice(0, 30)
       : [];
+
+    // -------------------------------------------------
+    // CLEAN MENTIONS
+    // -------------------------------------------------
 
     const cleanMentions = Array.isArray(mentions)
       ? mentions
           .filter(username => typeof username === 'string')
-          .map(username => username.trim().replace(/^@/, ''))
+          .map(username =>
+            username.trim().replace(/^@/, '')
+          )
           .filter(Boolean)
+          .slice(0, 30)
       : [];
+
+    // -------------------------------------------------
+    // CREATE REAL DATABASE POST
+    // -------------------------------------------------
 
     const newPost = await prisma.post.create({
       data: {
-        caption: caption?.trim() || null,
-        mediaUrl: mediaUrl || null,
+        caption: cleanCaption || null,
+
+        mediaUrl:
+          cleanMediaUrl || null,
+
+        thumbnailUrl:
+          cleanThumbnailUrl || null,
+
         mediaType: selectedMediaType,
-        song: song?.trim() || null,
-        hashtags: cleanHashtags,
-        mentions: cleanMentions,
+
+        durationSeconds:
+          cleanDuration,
+
+        song:
+          cleanSong || null,
+
+        soundUrl:
+          cleanSoundUrl || null,
+
+        hashtags:
+          cleanHashtags,
+
+        mentions:
+          cleanMentions,
+
         authorId
       },
+
       include: {
         author: {
           select: {
@@ -65,6 +198,7 @@ exports.createPost = async (req, res) => {
             isCreatorVerified: true
           }
         },
+
         _count: {
           select: {
             likes: true,
@@ -78,59 +212,73 @@ exports.createPost = async (req, res) => {
     });
 
     return res.status(201).json({
-      message: 'Post created successfully!',
+      message:
+        'Post created successfully.',
+
       post: newPost
     });
 
   } catch (error) {
-    console.error('CREATE POST ERROR:', error);
+    console.error(
+      'CREATE POST ERROR:',
+      error
+    );
 
     return res.status(500).json({
-      error: 'Server error while creating post.'
+      error:
+        'Server error while creating post.'
     });
   }
 };
 
 
-// Get the global OTA X feed
+// =====================================================
+// GET GLOBAL OTA X FEED
+// =====================================================
+
 exports.getAllPosts = async (req, res) => {
   try {
-    const posts = await prisma.post.findMany({
-      orderBy: {
-        createdAt: 'desc'
-      },
-
-      include: {
-        author: {
-          select: {
-            id: true,
-            username: true,
-            avatarUrl: true,
-            isCreatorVerified: true
-          }
+    const posts =
+      await prisma.post.findMany({
+        orderBy: {
+          createdAt: 'desc'
         },
 
-        _count: {
-          select: {
-            likes: true,
-            comments: true,
-            favorites: true,
-            shares: true,
-            reposts: true
+        include: {
+          author: {
+            select: {
+              id: true,
+              username: true,
+              avatarUrl: true,
+              isCreatorVerified: true
+            }
+          },
+
+          _count: {
+            select: {
+              likes: true,
+              comments: true,
+              favorites: true,
+              shares: true,
+              reposts: true
+            }
           }
         }
-      }
-    });
+      });
 
     return res.status(200).json({
       posts
     });
 
   } catch (error) {
-    console.error('FETCH POSTS ERROR:', error);
+    console.error(
+      'FETCH POSTS ERROR:',
+      error
+    );
 
     return res.status(500).json({
-      error: 'Server error while fetching posts.'
+      error:
+        'Server error while fetching posts.'
     });
   }
 };
