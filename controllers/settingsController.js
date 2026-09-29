@@ -1,6 +1,43 @@
 const prisma = require('../config/db');
 
 // =====================================================
+// ALLOWED SETTINGS
+// =====================================================
+
+const allowedSettings = [
+  'darkMode',
+  'notifications',
+
+  'notifyLikes',
+  'notifyComments',
+  'notifyFollowers',
+  'notifyMessages',
+  'notifyMentions',
+  'notifyReposts',
+  'notifyFavorites',
+  'notifySystem',
+
+  'privateAccount',
+  'showActivityStatus',
+
+  'allowComments',
+
+  'allowMessages',
+  'allowMessageRequests',
+  'showReadStatus',
+
+  'autoplayVideos',
+  'dataSaver',
+
+  'suggestMyAccount',
+  'allowMentions',
+  'allowTags',
+
+  'loginAlerts'
+];
+
+
+// =====================================================
 // GET MY SETTINGS
 // =====================================================
 
@@ -14,8 +51,8 @@ exports.getMySettings = async (req, res) => {
       }
     });
 
-    // Create default settings if the user does not
-    // have a settings record yet.
+    // Create default settings automatically
+    // for users who do not have a settings record yet.
     if (!settings) {
       settings = await prisma.userSettings.create({
         data: {
@@ -49,92 +86,24 @@ exports.updateMySettings = async (req, res) => {
   try {
     const userId = req.user.id;
 
-    const {
-      darkMode,
-      notifications,
-      privateAccount,
-      allowMessages,
-      allowComments
-    } = req.body;
-
     const data = {};
 
-    // -----------------------------
-    // DARK MODE
-    // -----------------------------
+    // Only accept known settings.
+    for (const setting of allowedSettings) {
+      if (req.body[setting] !== undefined) {
 
-    if (darkMode !== undefined) {
-      if (typeof darkMode !== 'boolean') {
-        return res.status(400).json({
-          error: 'darkMode must be true or false.'
-        });
+        if (typeof req.body[setting] !== 'boolean') {
+          return res.status(400).json({
+            error: `${setting} must be true or false.`
+          });
+        }
+
+        data[setting] = req.body[setting];
       }
-
-      data.darkMode = darkMode;
     }
 
     // -----------------------------
-    // NOTIFICATIONS
-    // -----------------------------
-
-    if (notifications !== undefined) {
-      if (typeof notifications !== 'boolean') {
-        return res.status(400).json({
-          error:
-            'notifications must be true or false.'
-        });
-      }
-
-      data.notifications = notifications;
-    }
-
-    // -----------------------------
-    // PRIVATE ACCOUNT
-    // -----------------------------
-
-    if (privateAccount !== undefined) {
-      if (typeof privateAccount !== 'boolean') {
-        return res.status(400).json({
-          error:
-            'privateAccount must be true or false.'
-        });
-      }
-
-      data.privateAccount = privateAccount;
-    }
-
-    // -----------------------------
-    // ALLOW MESSAGES
-    // -----------------------------
-
-    if (allowMessages !== undefined) {
-      if (typeof allowMessages !== 'boolean') {
-        return res.status(400).json({
-          error:
-            'allowMessages must be true or false.'
-        });
-      }
-
-      data.allowMessages = allowMessages;
-    }
-
-    // -----------------------------
-    // ALLOW COMMENTS
-    // -----------------------------
-
-    if (allowComments !== undefined) {
-      if (typeof allowComments !== 'boolean') {
-        return res.status(400).json({
-          error:
-            'allowComments must be true or false.'
-        });
-      }
-
-      data.allowComments = allowComments;
-    }
-
-    // -----------------------------
-    // NOTHING TO UPDATE
+    // UNKNOWN / EMPTY REQUEST
     // -----------------------------
 
     if (Object.keys(data).length === 0) {
@@ -142,6 +111,10 @@ exports.updateMySettings = async (req, res) => {
         error: 'No valid settings were provided.'
       });
     }
+
+    // -----------------------------
+    // UPDATE DATABASE
+    // -----------------------------
 
     const settings =
       await prisma.userSettings.upsert({
@@ -197,9 +170,33 @@ exports.resetMySettings = async (req, res) => {
         update: {
           darkMode: true,
           notifications: true,
+
+          notifyLikes: true,
+          notifyComments: true,
+          notifyFollowers: true,
+          notifyMessages: true,
+          notifyMentions: true,
+          notifyReposts: true,
+          notifyFavorites: true,
+          notifySystem: true,
+
           privateAccount: false,
+          showActivityStatus: true,
+
+          allowComments: true,
+
           allowMessages: true,
-          allowComments: true
+          allowMessageRequests: true,
+          showReadStatus: true,
+
+          autoplayVideos: true,
+          dataSaver: false,
+
+          suggestMyAccount: true,
+          allowMentions: true,
+          allowTags: true,
+
+          loginAlerts: true
         }
       });
 
