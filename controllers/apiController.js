@@ -204,3 +204,192 @@ exports.getPublicProfile = async (req, res) => {
     });
   }
 };
+
+// =====================================================
+// UPDATE MY PROFILE
+// =====================================================
+
+exports.updateProfile = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    const {
+      username,
+      bio,
+      avatarUrl
+    } = req.body;
+
+    const data = {};
+
+    // -----------------------------
+    // USERNAME
+    // -----------------------------
+
+    if (username !== undefined) {
+      if (typeof username !== 'string') {
+        return res.status(400).json({
+          error: 'Username must be text.'
+        });
+      }
+
+      const cleanUsername = username.trim();
+
+      if (!/^[a-zA-Z0-9_.]{3,30}$/.test(cleanUsername)) {
+        return res.status(400).json({
+          error:
+            'Username must be 3-30 characters and may contain only letters, numbers, underscores and periods.'
+        });
+      }
+
+      const existingUser = await prisma.user.findFirst({
+        where: {
+          username: cleanUsername,
+          NOT: {
+            id: userId
+          }
+        },
+        select: {
+          id: true
+        }
+      });
+
+      if (existingUser) {
+        return res.status(409).json({
+          error: 'Username is already taken.'
+        });
+      }
+
+      data.username = cleanUsername;
+    }
+
+    // -----------------------------
+    // BIO
+    // -----------------------------
+
+    if (bio !== undefined) {
+      if (bio !== null && typeof bio !== 'string') {
+        return res.status(400).json({
+          error: 'Bio must be text.'
+        });
+      }
+
+      const cleanBio =
+        bio === null ? null : bio.trim();
+
+      if (cleanBio && cleanBio.length > 160) {
+        return res.status(400).json({
+          error: 'Bio cannot exceed 160 characters.'
+        });
+      }
+
+      data.bio = cleanBio || null;
+    }
+
+    // -----------------------------
+    // AVATAR URL
+    // -----------------------------
+
+    if (avatarUrl !== undefined) {
+      if (
+        avatarUrl !== null &&
+        typeof avatarUrl !== 'string'
+      ) {
+        return res.status(400).json({
+          error: 'Avatar URL must be text.'
+        });
+      }
+
+      const cleanAvatarUrl =
+        avatarUrl === null
+          ? null
+          : avatarUrl.trim();
+
+      if (
+        cleanAvatarUrl &&
+        cleanAvatarUrl.length > 2048
+      ) {
+        return res.status(400).json({
+          error: 'Avatar URL is too long.'
+        });
+      }
+
+      data.avatarUrl = cleanAvatarUrl || null;
+    }
+
+    // -----------------------------
+    // NOTHING TO UPDATE
+    // -----------------------------
+
+    if (Object.keys(data).length === 0) {
+      return res.status(400).json({
+        error:
+          'Please provide a username, bio or avatar URL to update.'
+      });
+    }
+
+    const updatedUser =
+      await prisma.user.update({
+        where: {
+          id: userId
+        },
+        data,
+        select: {
+          id: true,
+          username: true,
+          avatarUrl: true,
+          bio: true,
+          isCreatorVerified: true,
+          isVerified: true,
+          createdAt: true,
+          updatedAt: true,
+
+          _count: {
+            select: {
+              posts: true,
+              followers: true,
+              following: true
+            }
+          }
+        }
+      });
+
+    return res.status(200).json({
+      message: 'Profile updated successfully.',
+      profile: {
+        id: updatedUser.id,
+        username: updatedUser.username,
+        avatarUrl: updatedUser.avatarUrl,
+        bio: updatedUser.bio,
+        isCreatorVerified:
+          updatedUser.isCreatorVerified,
+        isVerified: updatedUser.isVerified,
+        createdAt: updatedUser.createdAt,
+        updatedAt: updatedUser.updatedAt,
+
+        counts: {
+          posts: updatedUser._count.posts,
+          followers:
+            updatedUser._count.followers,
+          following:
+            updatedUser._count.following
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error(
+      'UPDATE PROFILE ERROR:',
+      error
+    );
+
+    if (error.code === 'P2002') {
+      return res.status(409).json({
+        error: 'That username is already taken.'
+      });
+    }
+
+    return res.status(500).json({
+      error: 'Server error while updating profile.'
+    });
+  }
+};
