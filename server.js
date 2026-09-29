@@ -11,6 +11,7 @@ const notificationRoutes = require('./routes/notificationRoutes');
 const followRoutes = require('./routes/followRoutes');
 const favoriteRoutes = require('./routes/favoriteRoutes');
 const shareRoutes = require('./routes/shareRoutes');
+const repostRoutes = require('./routes/repostRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 10000;
@@ -96,6 +97,12 @@ app.use('/api/favorites', favoriteRoutes);
 // =====================================================
 
 app.use('/api/shares', shareRoutes);
+
+// =====================================================
+// REPOSTS
+// =====================================================
+
+app.use('/api/reposts', repostRoutes);
 
 // =====================================================
 // START SERVER
