@@ -12,6 +12,7 @@ const followRoutes = require('./routes/followRoutes');
 const favoriteRoutes = require('./routes/favoriteRoutes');
 const shareRoutes = require('./routes/shareRoutes');
 const repostRoutes = require('./routes/repostRoutes');
+const settingsRoutes = require('./routes/settingsRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 10000;
@@ -103,6 +104,12 @@ app.use('/api/shares', shareRoutes);
 // =====================================================
 
 app.use('/api/reposts', repostRoutes);
+
+// =====================================================
+// SETTINGS
+// =====================================================
+
+app.use('/api/settings', settingsRoutes);
 
 // =====================================================
 // START SERVER
