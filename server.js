@@ -7,6 +7,7 @@ const authRoutes = require('./routes/auth');
 const postRoutes = require('./routes/postRoutes');
 const likeRoutes = require('./routes/likeRoutes');
 const commentRoutes = require('./routes/commentRoutes');
+const notificationRoutes = require('./routes/notificationRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 10000;
@@ -68,6 +69,12 @@ app.use('/api/likes', likeRoutes);
 // =====================================================
 
 app.use('/api/comments', commentRoutes);
+
+// =====================================================
+// NOTIFICATIONS
+// =====================================================
+
+app.use('/api/notifications', notificationRoutes);
 
 // =====================================================
 // START SERVER
