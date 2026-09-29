@@ -344,3 +344,25 @@ exports.getFollowStatus = async (req, res) => {
 
     const followingCount = await prisma.follow.count({
       where:
+{
+        followerId: followingId
+      }
+    });
+
+    return res.status(200).json({
+      following: Boolean(existingFollow),
+      followerCount,
+      followingCount
+    });
+  } catch (error) {
+    console.error(
+      'GET FOLLOW STATUS ERROR:',
+      error
+    );
+
+    return res.status(500).json({
+      error:
+        'Server error while checking follow status.'
+    });
+  }
+};
