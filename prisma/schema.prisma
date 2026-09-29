@@ -34,6 +34,7 @@ enum NotificationType {
   FAVORITE
   MESSAGE
   MENTION
+  SYSTEM
 }
 
 enum ReportType {
@@ -57,72 +58,94 @@ enum LiveStatus {
 }
 
 model User {
-  id               Int        @id @default(autoincrement())
-  username         String     @unique
-  email            String     @unique
-  password         String
+  id       Int    @id @default(autoincrement())
+  username String @unique
+  email    String @unique
+  password String
 
-  role             Role       @default(USER)
+  role Role @default(USER)
 
-  verificationCode String?
-  isVerified       Boolean    @default(false)
+  // Email verification
+  verificationCode          String?
+  verificationCodeExpiresAt DateTime?
+  isVerified                Boolean  @default(false)
 
+  // Password reset
   passwordResetCode      String?
   passwordResetExpiresAt DateTime?
 
-  avatarUrl        String?
-  bio              String?
+  // Profile
+  avatarUrl String?
+  bio       String?
 
-  country          String?
-  region           String?
+  // Country/region preference
+  // This information should not be exposed publicly by default.
+  country String?
+  region  String?
 
+  // Creator verification
   isCreatorVerified Boolean @default(false)
 
-  posts            Post[]
-  likes            Like[]
-  comments         Comment[]
-  commentLikes     CommentLike[]
-  favorites        Favorite[]
-  shares           Share[]
-  reposts          Repost[]
+  // Account state
+  isActive  Boolean  @default(true)
+  lastSeenAt DateTime?
 
-  followers        Follow[]   @relation("UserFollowers")
-  following        Follow[]   @relation("UserFollowing")
+  // Relationships
+  posts        Post[]
+  likes        Like[]
+  comments     Comment[]
+  commentLikes CommentLike[]
+  favorites    Favorite[]
+  shares       Share[]
+  reposts      Repost[]
 
-  sentMessages     Message[]  @relation("MessageSender")
-  receivedMessages Message[]  @relation("MessageReceiver")
+  followers Follow[] @relation("UserFollowers")
+  following Follow[] @relation("UserFollowing")
+
+  sentMessages     Message[] @relation("MessageSender")
+  receivedMessages Message[] @relation("MessageReceiver")
 
   conversationMembers ConversationMember[]
 
   notificationsReceived Notification[] @relation("NotificationRecipient")
   notificationsSent     Notification[] @relation("NotificationActor")
 
-  stories         Story[]
-  liveSessions    LiveSession[] @relation("LiveHost")
+  stories      Story[]
+  liveSessions LiveSession[] @relation("LiveHost")
 
   reportsMade     Report[] @relation("ReportCreator")
   reportsReceived Report[] @relation("ReportedUser")
 
-  settings         UserSettings?
+  settings UserSettings?
 
-  createdAt        DateTime   @default(now())
-  updatedAt        DateTime   @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([createdAt])
+  @@index([lastSeenAt])
 }
 
 model Post {
-  id        Int       @id @default(autoincrement())
+  id Int @id @default(autoincrement())
 
-  caption   String?
-  mediaUrl  String?
-  mediaType MediaType @default(TEXT)
+  caption String?
 
+  mediaUrl   String?
+  thumbnailUrl String?
+  mediaType  MediaType @default(TEXT)
+
+  // Optional metadata for video/media
+  durationSeconds Int?
+
+  // Sound information
   song      String?
+  soundUrl  String?
 
   hashtags String[] @default([])
   mentions String[] @default([])
 
-  authorId  Int
-  author    User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  authorId Int
+  author   User @relation(fields: [authorId], references: [id], onDelete: Cascade)
 
   likes     Like[]
   comments  Comment[]
@@ -130,17 +153,18 @@ model Post {
   shares    Share[]
   reposts   Repost[]
 
-  reports   Report[]
+  reports Report[]
 
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([authorId])
   @@index([createdAt])
+  @@index([mediaType])
 }
 
 model Like {
-  id     Int  @id @default(autoincrement())
+  id Int @id @default(autoincrement())
 
   userId Int
   user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -152,10 +176,11 @@ model Like {
 
   @@unique([userId, postId])
   @@index([postId])
+  @@index([userId])
 }
 
 model Favorite {
-  id     Int  @id @default(autoincrement())
+  id Int @id @default(autoincrement())
 
   userId Int
   user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -167,10 +192,11 @@ model Favorite {
 
   @@unique([userId, postId])
   @@index([postId])
+  @@index([userId])
 }
 
 model Share {
-  id     Int  @id @default(autoincrement())
+  id Int @id @default(autoincrement())
 
   userId Int
   user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -181,10 +207,11 @@ model Share {
   createdAt DateTime @default(now())
 
   @@index([postId])
+  @@index([userId])
 }
 
 model Repost {
-  id     Int  @id @default(autoincrement())
+  id Int @id @default(autoincrement())
 
   userId Int
   user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -198,147 +225,169 @@ model Repost {
 
   @@unique([userId, postId])
   @@index([postId])
+  @@index([userId])
 }
 
 model Comment {
-  id        Int      @id @default(autoincrement())
+  id Int @id @default(autoincrement())
 
-  text      String?
-  voiceUrl  String?
+  text     String?
+  voiceUrl String?
 
-  userId    Int
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId Int
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  postId    Int
-  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  postId Int
+  post   Post @relation(fields: [postId], references: [id], onDelete: Cascade)
 
-  parentId  Int?
-  parent    Comment? @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
-  replies   Comment[] @relation("CommentReplies")
+  // Replies
+  parentId Int?
+  parent   Comment? @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies  Comment[] @relation("CommentReplies")
 
-  likes     CommentLike[]
+  likes CommentLike[]
 
-  reports   Report[]
+  reports Report[]
 
   createdAt DateTime @default(now())
 
   @@index([postId])
   @@index([parentId])
+  @@index([userId])
+  @@index([createdAt])
 }
 
 model CommentLike {
-  id        Int      @id @default(autoincrement())
+  id Int @id @default(autoincrement())
 
-  userId    Int
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId Int
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   commentId Int
-  comment   Comment  @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  comment   Comment @relation(fields: [commentId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now())
 
   @@unique([userId, commentId])
   @@index([commentId])
+  @@index([userId])
 }
 
 model Follow {
-  id          Int  @id @default(autoincrement())
+  id Int @id @default(autoincrement())
 
-  followerId  Int
-  follower    User @relation("UserFollowing", fields: [followerId], references: [id], onDelete: Cascade)
+  followerId Int
+  follower   User @relation("UserFollowing", fields: [followerId], references: [id], onDelete: Cascade)
 
   followingId Int
   following   User @relation("UserFollowers", fields: [followingId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now())
 
+  // Prevent duplicate follows
   @@unique([followerId, followingId])
+
   @@index([followingId])
+  @@index([followerId])
+  @@index([createdAt])
 }
 
 model Conversation {
-  id        Int                   @id @default(autoincrement())
+  id Int @id @default(autoincrement())
 
-  members   ConversationMember[]
-  messages  Message[]
+  // Optional key for a direct/private conversation.
+  // Group conversations can leave this null.
+  directKey String? @unique
 
-  createdAt DateTime              @default(now())
-  updatedAt DateTime              @updatedAt
+  members  ConversationMember[]
+  messages Message[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([updatedAt])
 }
 
 model ConversationMember {
-  id             Int          @id @default(autoincrement())
+  id Int @id @default(autoincrement())
 
   conversationId Int
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 
-  userId         Int
-  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId Int
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  joinedAt       DateTime     @default(now())
+  joinedAt DateTime @default(now())
 
   @@unique([conversationId, userId])
   @@index([userId])
+  @@index([conversationId])
 }
 
 model Message {
-  id             Int           @id @default(autoincrement())
+  id Int @id @default(autoincrement())
 
   conversationId Int
-  conversation   Conversation  @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 
-  senderId       Int
-  sender         User          @relation("MessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+  senderId Int
+  sender   User @relation("MessageSender", fields: [senderId], references: [id], onDelete: Cascade)
 
-  receiverId     Int
-  receiver       User          @relation("MessageReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
+  receiverId Int
+  receiver   User @relation("MessageReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
 
-  type           MessageType   @default(TEXT)
+  type MessageType @default(TEXT)
 
-  text           String?
-  mediaUrl       String?
-  voiceUrl       String?
+  text     String?
+  mediaUrl String?
+  voiceUrl String?
 
-  isRead         Boolean       @default(false)
+  isRead Boolean @default(false)
 
-  createdAt      DateTime      @default(now())
+  createdAt DateTime @default(now())
 
   @@index([conversationId])
+  @@index([senderId])
   @@index([receiverId])
   @@index([createdAt])
+  @@index([receiverId, isRead])
 }
 
 model Notification {
-  id          Int              @id @default(autoincrement())
+  id Int @id @default(autoincrement())
 
   recipientId Int
-  recipient   User             @relation("NotificationRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+  recipient   User @relation("NotificationRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
 
-  actorId     Int?
-  actor       User?            @relation("NotificationActor", fields: [actorId], references: [id], onDelete: Cascade)
+  actorId Int?
+  actor   User? @relation("NotificationActor", fields: [actorId], references: [id], onDelete: Cascade)
 
-  type        NotificationType
-  message     String
+  type    NotificationType
+  message String
 
-  postId      Int?
-  commentId   Int?
+  // Related content IDs
+  postId    Int?
+  commentId Int?
 
-  isRead      Boolean          @default(false)
+  isRead Boolean @default(false)
 
-  createdAt   DateTime         @default(now())
+  createdAt DateTime @default(now())
 
   @@index([recipientId])
+  @@index([recipientId, isRead])
   @@index([createdAt])
 }
 
 model Story {
-  id        Int      @id @default(autoincrement())
+  id Int @id @default(autoincrement())
 
-  userId    Int
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId Int
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  mediaUrl  String?
-  text      String?
+  mediaUrl   String?
+  mediaType  MediaType @default(IMAGE)
+  text       String?
+  durationSeconds Int?
 
   createdAt DateTime @default(now())
   expiresAt DateTime
@@ -348,61 +397,66 @@ model Story {
 }
 
 model LiveSession {
-  id          Int        @id @default(autoincrement())
+  id Int @id @default(autoincrement())
 
-  hostId      Int
-  host        User       @relation("LiveHost", fields: [hostId], references: [id], onDelete: Cascade)
+  hostId Int
+  host   User @relation("LiveHost", fields: [hostId], references: [id], onDelete: Cascade)
 
-  title       String?
-  status      LiveStatus @default(SCHEDULED)
+  title  String?
+  status LiveStatus @default(SCHEDULED)
 
-  startedAt   DateTime?
-  endedAt     DateTime?
+  startedAt DateTime?
+  endedAt   DateTime?
 
-  createdAt   DateTime   @default(now())
+  createdAt DateTime @default(now())
 
   @@index([hostId])
-  @@index([status])
-}
-
-model Report {
-  id          Int          @id @default(autoincrement())
-
-  reporterId  Int
-  reporter    User         @relation("ReportCreator", fields: [reporterId], references: [id], onDelete: Cascade)
-
-  reportedUserId Int?
-  reportedUser   User?     @relation("ReportedUser", fields: [reportedUserId], references: [id], onDelete: Cascade)
-
-  postId      Int?
-  post        Post?        @relation(fields: [postId], references: [id], onDelete: Cascade)
-
-  commentId   Int?
-  comment     Comment?     @relation(fields: [commentId], references: [id], onDelete: Cascade)
-
-  type        ReportType
-  reason      String
-  status      ReportStatus @default(PENDING)
-
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
-
   @@index([status])
   @@index([createdAt])
 }
 
+model Report {
+  id Int @id @default(autoincrement())
+
+  reporterId Int
+  reporter   User @relation("ReportCreator", fields: [reporterId], references: [id], onDelete: Cascade)
+
+  reportedUserId Int?
+  reportedUser   User? @relation("ReportedUser", fields: [reportedUserId], references: [id], onDelete: Cascade)
+
+  postId Int?
+  post   Post? @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  commentId Int?
+  comment   Comment? @relation(fields: [commentId], references: [id], onDelete: Cascade)
+
+  type   ReportType
+  reason String
+  status ReportStatus @default(PENDING)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([createdAt])
+  @@index([reporterId])
+  @@index([reportedUserId])
+  @@index([postId])
+  @@index([commentId])
+}
+
 model UserSettings {
-  id                  Int      @id @default(autoincrement())
+  id Int @id @default(autoincrement())
 
-  userId              Int      @unique
-  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId Int @unique
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  darkMode            Boolean  @default(true)
-  notifications       Boolean  @default(true)
-  privateAccount      Boolean  @default(false)
-  allowMessages       Boolean  @default(true)
-  allowComments       Boolean  @default(true)
+  darkMode       Boolean @default(true)
+  notifications  Boolean @default(true)
+  privateAccount Boolean @default(false)
+  allowMessages  Boolean @default(true)
+  allowComments  Boolean @default(true)
 
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
