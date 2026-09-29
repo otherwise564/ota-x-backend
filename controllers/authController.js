@@ -1,11 +1,15 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const nodemailer = require('nodemailer');
+const crypto = require('crypto');
 const prisma = require('../config/db');
 
 const VERIFICATION_CODE_EXPIRY_MINUTES = 10;
 
-// Gmail transporter
+// =====================================================
+// EMAIL TRANSPORTER
+// =====================================================
+
 const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
@@ -14,25 +18,49 @@ const transporter = nodemailer.createTransport({
   }
 });
 
-// Generate a secure 6-digit verification code
+// =====================================================
+// HELPERS
+// =====================================================
+
 function generateVerificationCode() {
-  return Math.floor(100000 + Math.random() * 900000).toString();
+  return crypto.randomInt(100000, 1000000).toString();
 }
 
-// Calculate verification expiry time
 function getVerificationExpiry() {
   return new Date(
     Date.now() + VERIFICATION_CODE_EXPIRY_MINUTES * 60 * 1000
   );
 }
 
-// Send verification email
+function normalizeEmail(email) {
+  return String(email).trim().toLowerCase();
+}
+
+function normalizeUsername(username) {
+  return String(username).trim();
+}
+
+function isValidUsername(username) {
+  return /^[a-zA-Z0-9_.]{3,30}$/.test(username);
+}
+
+function isValidVerificationCode(code) {
+  return /^\d{6}$/.test(code);
+}
+
 async function sendVerificationEmail(email, code) {
+  if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+    throw new Error('Email service is not configured.');
+  }
+
   await transporter.sendMail({
     from: process.env.EMAIL_USER,
     to: email,
     subject: 'OTA X Verification Code',
-    text: `Your OTA X verification code is ${code}. This code expires in ${VERIFICATION_CODE_EXPIRY_MINUTES} minutes.`
+    text:
+      `Your OTA X verification code is ${code}.\n\n` +
+      `This code expires in ${VERIFICATION_CODE_EXPIRY_MINUTES} minutes.\n\n` +
+      `If you did not create an OTA X account, you can ignore this email.`
   });
 }
 
@@ -51,12 +79,19 @@ exports.register = async (req, res) => {
       });
     }
 
-    const normalizedEmail = email.trim().toLowerCase();
-    const normalizedUsername = username.trim();
+    const normalizedUsername = normalizeUsername(username);
+    const normalizedEmail = normalizeEmail(email);
 
-    if (normalizedUsername.length < 3) {
+    if (!isValidUsername(normalizedUsername)) {
       return res.status(400).json({
-        error: 'Username must be at least 3 characters long.'
+        error:
+          'Username must be 3-30 characters and may contain only letters, numbers, underscores and periods.'
+      });
+    }
+
+    if (normalizedEmail.length > 254) {
+      return res.status(400).json({
+        error: 'Email address is too long.'
       });
     }
 
@@ -69,8 +104,12 @@ exports.register = async (req, res) => {
     const existingUser = await prisma.user.findFirst({
       where: {
         OR: [
-          { email: normalizedEmail },
-          { username: normalizedUsername }
+          {
+            email: normalizedEmail
+          },
+          {
+            username: normalizedUsername
+          }
         ]
       }
     });
@@ -86,11 +125,6 @@ exports.register = async (req, res) => {
     const verificationCode = generateVerificationCode();
     const verificationCodeExpiresAt = getVerificationExpiry();
 
-    /*
-     * Create the account as UNVERIFIED.
-     * The account remains in PostgreSQL and cannot log in
-     * until the email verification succeeds.
-     */
     const newUser = await prisma.user.create({
       data: {
         username: normalizedUsername,
@@ -108,14 +142,13 @@ exports.register = async (req, res) => {
         verificationCode
       );
     } catch (emailError) {
-      console.error('EMAIL SENDING ERROR:', emailError);
+      console.error(
+        'REGISTER EMAIL ERROR:',
+        emailError
+      );
 
-      /*
-       * Email delivery failed.
-       * Remove the newly-created account so the user can safely
-       * try registration again instead of being left with an
-       * unusable unverified account.
-       */
+      // Do not leave an account that cannot receive
+      // its required verification email.
       await prisma.user.delete({
         where: {
           id: newUser.id
@@ -123,12 +156,14 @@ exports.register = async (req, res) => {
       });
 
       return res.status(503).json({
-        error: 'We could not send the verification email. Please try again.'
+        error:
+          'We could not send your verification email. Please try again later.'
       });
     }
 
     return res.status(201).json({
-      message: 'Registration successful. Please check your email for your verification code.',
+      message:
+        'Registration successful. Please check your email for your verification code.',
       user: {
         id: newUser.id,
         username: newUser.username,
@@ -139,7 +174,10 @@ exports.register = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('REGISTER ERROR:', error);
+    console.error(
+      'REGISTER ERROR:',
+      error
+    );
 
     return res.status(500).json({
       error: 'Server error during registration.'
@@ -162,8 +200,14 @@ exports.verifyCode = async (req, res) => {
       });
     }
 
-    const normalizedEmail = email.trim().toLowerCase();
+    const normalizedEmail = normalizeEmail(email);
     const normalizedCode = String(code).trim();
+
+    if (!isValidVerificationCode(normalizedCode)) {
+      return res.status(400).json({
+        error: 'Verification code must be exactly 6 digits.'
+      });
+    }
 
     const user = await prisma.user.findUnique({
       where: {
@@ -183,15 +227,23 @@ exports.verifyCode = async (req, res) => {
       });
     }
 
-    if (!user.verificationCode || !user.verificationCodeExpiresAt) {
+    if (
+      !user.verificationCode ||
+      !user.verificationCodeExpiresAt
+    ) {
       return res.status(400).json({
-        error: 'No active verification code. Please request a new code.'
+        error:
+          'There is no active verification code. Please request a new code.'
       });
     }
 
-    if (new Date() > user.verificationCodeExpiresAt) {
+    if (
+      new Date() >
+      user.verificationCodeExpiresAt
+    ) {
       return res.status(400).json({
-        error: 'Verification code has expired. Please request a new code.'
+        error:
+          'Verification code has expired. Please request a new code.'
       });
     }
 
@@ -213,11 +265,15 @@ exports.verifyCode = async (req, res) => {
     });
 
     return res.status(200).json({
-      message: 'Account verified successfully. You can now log in.'
+      message:
+        'Account verified successfully. You can now log in.'
     });
 
   } catch (error) {
-    console.error('VERIFY ERROR:', error);
+    console.error(
+      'VERIFY ERROR:',
+      error
+    );
 
     return res.status(500).json({
       error: 'Server error during verification.'
@@ -240,7 +296,7 @@ exports.resendVerificationCode = async (req, res) => {
       });
     }
 
-    const normalizedEmail = email.trim().toLowerCase();
+    const normalizedEmail = normalizeEmail(email);
 
     const user = await prisma.user.findUnique({
       where: {
@@ -260,8 +316,28 @@ exports.resendVerificationCode = async (req, res) => {
       });
     }
 
-    const verificationCode = generateVerificationCode();
-    const verificationCodeExpiresAt = getVerificationExpiry();
+    const verificationCode =
+      generateVerificationCode();
+
+    const verificationCodeExpiresAt =
+      getVerificationExpiry();
+
+    try {
+      await sendVerificationEmail(
+        normalizedEmail,
+        verificationCode
+      );
+    } catch (emailError) {
+      console.error(
+        'RESEND EMAIL ERROR:',
+        emailError
+      );
+
+      return res.status(503).json({
+        error:
+          'We could not send the verification email. Please try again later.'
+      });
+    }
 
     await prisma.user.update({
       where: {
@@ -273,28 +349,20 @@ exports.resendVerificationCode = async (req, res) => {
       }
     });
 
-    try {
-      await sendVerificationEmail(
-        normalizedEmail,
-        verificationCode
-      );
-    } catch (emailError) {
-      console.error('RESEND EMAIL ERROR:', emailError);
-
-      return res.status(503).json({
-        error: 'We could not send the verification email. Please try again later.'
-      });
-    }
-
     return res.status(200).json({
-      message: 'A new verification code has been sent to your email.'
+      message:
+        'A new verification code has been sent to your email.'
     });
 
   } catch (error) {
-    console.error('RESEND VERIFICATION ERROR:', error);
+    console.error(
+      'RESEND VERIFICATION ERROR:',
+      error
+    );
 
     return res.status(500).json({
-      error: 'Server error while sending verification code.'
+      error:
+        'Server error while sending verification code.'
     });
   }
 };
@@ -314,7 +382,7 @@ exports.login = async (req, res) => {
       });
     }
 
-    const normalizedEmail = email.trim().toLowerCase();
+    const normalizedEmail = normalizeEmail(email);
 
     const user = await prisma.user.findUnique({
       where: {
@@ -328,28 +396,40 @@ exports.login = async (req, res) => {
       });
     }
 
-    if (!user.isVerified) {
+    if (!user.isActive) {
       return res.status(403).json({
-        error: 'Please verify your email address before logging in.'
+        error:
+          'This account has been deactivated.'
       });
     }
 
-    const isMatch = await bcrypt.compare(
-      password,
-      user.password
-    );
+    if (!user.isVerified) {
+      return res.status(403).json({
+        error:
+          'Please verify your email address before logging in.'
+      });
+    }
 
-    if (!isMatch) {
+    const passwordMatches =
+      await bcrypt.compare(
+        password,
+        user.password
+      );
+
+    if (!passwordMatches) {
       return res.status(400).json({
         error: 'Invalid credentials.'
       });
     }
 
     if (!process.env.JWT_SECRET) {
-      console.error('JWT_SECRET is not configured.');
+      console.error(
+        'JWT_SECRET is not configured.'
+      );
 
       return res.status(500).json({
-        error: 'Authentication service is not configured.'
+        error:
+          'Authentication service is not configured.'
       });
     }
 
@@ -365,8 +445,17 @@ exports.login = async (req, res) => {
       }
     );
 
+    await prisma.user.update({
+      where: {
+        id: user.id
+      },
+      data: {
+        lastSeenAt: new Date()
+      }
+    });
+
     return res.status(200).json({
-      message: 'Login successful',
+      message: 'Login successful.',
       token,
       user: {
         id: user.id,
@@ -374,12 +463,16 @@ exports.login = async (req, res) => {
         email: user.email,
         role: user.role,
         isVerified: user.isVerified,
-        isCreatorVerified: user.isCreatorVerified
+        isCreatorVerified:
+          user.isCreatorVerified
       }
     });
 
   } catch (error) {
-    console.error('LOGIN ERROR:', error);
+    console.error(
+      'LOGIN ERROR:',
+      error
+    );
 
     return res.status(500).json({
       error: 'Server error during login.'
