@@ -8,11 +8,47 @@ const {
 } = require('../controllers/commentController');
 
 const authMiddleware = require('../middleware/auth');
+const upload = require('../middleware/upload');
 
-// Get comments for a post
-router.get('/:postId', getPostComments);
 
-// Create a comment or reply
-router.post('/:postId', authMiddleware, createComment);
+// =====================================================
+// MULTER ERROR HANDLER
+// =====================================================
+
+const voiceUpload = (req, res, next) => {
+  upload.single('voice')(req, res, (error) => {
+
+    if (error) {
+      return res.status(400).json({
+        error: error.message
+      });
+    }
+
+    next();
+  });
+};
+
+
+// =====================================================
+// GET COMMENTS
+// =====================================================
+
+router.get(
+  '/:postId',
+  getPostComments
+);
+
+
+// =====================================================
+// CREATE TEXT OR VOICE COMMENT
+// =====================================================
+
+router.post(
+  '/:postId',
+  authMiddleware,
+  voiceUpload,
+  createComment
+);
+
 
 module.exports = router;
