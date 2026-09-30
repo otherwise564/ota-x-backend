@@ -168,7 +168,7 @@ model Post {
   song     String?
   soundUrl String?
 
-  hashtags String[] @default([])
+  hashtags  String[] @default([])
   mentions String[] @default([])
 
   authorId Int
@@ -430,6 +430,9 @@ model Message {
 
   isRead Boolean @default(false)
 
+  // MESSAGE REPORTS
+  reports Report[]
+
   createdAt DateTime @default(now())
 
   @@index([conversationId])
@@ -538,6 +541,10 @@ model Report {
   commentId Int?
   comment   Comment? @relation(fields: [commentId], references: [id], onDelete: Cascade)
 
+  // MESSAGE REPORTING
+  messageId Int?
+  message   Message? @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
   type ReportType
 
   reason String
@@ -553,6 +560,7 @@ model Report {
   @@index([reportedUserId])
   @@index([postId])
   @@index([commentId])
+  @@index([messageId])
 }
 
 // =====================================================
