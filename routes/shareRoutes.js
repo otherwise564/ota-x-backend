@@ -9,10 +9,23 @@ const {
 
 const authMiddleware = require('../middleware/auth');
 
-// Share a post
-router.post('/:postId', authMiddleware, sharePost);
+// =====================================================
+// SHARE ROUTES
+// =====================================================
 
-// Get share count for a post
-router.get('/:postId/count', getShareCount);
+// Share a post
+// Requires authentication
+router.post(
+  '/:postId',
+  authMiddleware,
+  sharePost
+);
+
+// Get the share count for a post
+// Public endpoint
+router.get(
+  '/:postId/count',
+  getShareCount
+);
 
 module.exports = router;
