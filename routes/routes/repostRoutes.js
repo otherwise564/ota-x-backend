@@ -12,6 +12,18 @@ const {
 const authMiddleware = require('../middleware/auth');
 
 // =====================================================
+// GET MY REPOSTS
+// =====================================================
+// Must come before /:postId routes so "me" is not
+// interpreted as a post ID.
+
+router.get(
+  '/me',
+  authMiddleware,
+  getMyReposts
+);
+
+// =====================================================
 // REPOST A POST
 // =====================================================
 
@@ -29,16 +41,6 @@ router.delete(
   '/:postId',
   authMiddleware,
   unrepostPost
-);
-
-// =====================================================
-// GET MY REPOSTS
-// =====================================================
-
-router.get(
-  '/me',
-  authMiddleware,
-  getMyReposts
 );
 
 // =====================================================
