@@ -35,6 +35,11 @@ enum NotificationType {
   MESSAGE
   MENTION
   SYSTEM
+  VERIFICATION
+  GIFT
+  PAYOUT
+  LIVE
+  COMMUNITY
 }
 
 enum ReportType {
@@ -42,6 +47,8 @@ enum ReportType {
   USER
   COMMENT
   MESSAGE
+  COMMUNITY
+  LIVE
 }
 
 enum ReportStatus {
@@ -64,6 +71,51 @@ enum FollowRequestStatus {
   CANCELLED
 }
 
+enum VerificationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum WalletTransactionType {
+  COIN_PURCHASE
+  GIFT_SENT
+  GIFT_RECEIVED
+  CREATOR_EARNING
+  PLATFORM_FEE
+  REFUND
+  ADJUSTMENT
+  PAYOUT
+}
+
+enum PayoutStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  REJECTED
+  CANCELLED
+}
+
+enum GiftStatus {
+  SENT
+  CANCELLED
+  REFUNDED
+}
+
+enum CommunityMemberRole {
+  MEMBER
+  MODERATOR
+  OWNER
+}
+
+enum CommunityStatus {
+  ACTIVE
+  SUSPENDED
+  DELETED
+}
+
 model User {
   id       Int    @id @default(autoincrement())
   username String @unique
@@ -74,7 +126,6 @@ model User {
 
   verificationCode          String?
   verificationCodeExpiresAt DateTime?
-
   isVerified Boolean @default(false)
 
   passwordResetCode      String?
@@ -106,18 +157,45 @@ model User {
 
   sentMessages Message[] @relation("MessageSender")
   receivedMessages Message[] @relation("MessageReceiver")
-
   conversationMembers ConversationMember[]
 
   notificationsReceived Notification[] @relation("NotificationRecipient")
   notificationsSent Notification[] @relation("NotificationActor")
 
   stories Story[]
+  storyViews StoryView[] @relation("StoryViewer")
 
   liveSessions LiveSession[] @relation("LiveHost")
+  liveViews LiveViewer[] @relation("LiveViewerUser")
+  liveMessages LiveMessage[] @relation("LiveMessageSender")
 
   reportsMade Report[] @relation("ReportCreator")
   reportsReceived Report[] @relation("ReportedUser")
+
+  blocksMade Block[] @relation("BlockCreator")
+  blocksReceived Block[] @relation("BlockedUser")
+
+  mutesMade Mute[] @relation("MuteCreator")
+  mutesReceived Mute[] @relation("MutedUser")
+
+  communitiesOwned Community[] @relation("CommunityOwner")
+  communityMemberships CommunityMember[]
+
+  verificationApplications VerificationApplication[]
+  approvedVerificationApplications VerificationApplication[] @relation("VerificationReviewer")
+
+  creatorProfile CreatorProfile?
+
+  wallet Wallet?
+  walletTransactions WalletTransaction[] @relation("UserWalletTransactions")
+  coinPurchases CoinPurchase[] @relation("CoinBuyer")
+
+  giftsSent Gift[] @relation("GiftSender")
+  giftsReceived Gift[] @relation("GiftRecipient")
+
+  payoutRequests PayoutRequest[]
+
+  postViews PostView[] @relation("PostViewer")
 
   settings UserSettings?
 
@@ -126,20 +204,19 @@ model User {
 
   @@index([createdAt])
   @@index([lastSeenAt])
+  @@index([country])
+  @@index([isCreatorVerified])
+  @@index([isActive])
 }
 
 model Post {
   id Int @id @default(autoincrement())
 
   caption String?
-
   mediaUrl String?
   thumbnailUrl String?
-
   mediaType MediaType @default(TEXT)
-
   durationSeconds Int?
-
   song String?
   soundUrl String?
 
@@ -149,6 +226,9 @@ model Post {
   authorId Int
   author User @relation(fields: [authorId], references: [id], onDelete: Cascade)
 
+  communityId Int?
+  community Community? @relation(fields: [communityId], references: [id], onDelete: SetNull)
+
   likes Like[]
   comments Comment[]
   favorites Favorite[]
@@ -156,6 +236,7 @@ model Post {
   reposts Repost[]
   reports Report[]
   notifications Notification[]
+  views PostView[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -163,6 +244,7 @@ model Post {
   @@index([authorId])
   @@index([createdAt])
   @@index([mediaType])
+  @@index([communityId])
 }
 
 model Like {
@@ -244,7 +326,12 @@ model Comment {
 
   parentId Int?
 
-  parent Comment? @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  parent Comment? @relation(
+    "CommentReplies",
+    fields: [parentId],
+    references: [id],
+    onDelete: Cascade
+  )
 
   replies Comment[] @relation("CommentReplies")
 
@@ -279,10 +366,20 @@ model Follow {
   id Int @id @default(autoincrement())
 
   followerId Int
-  follower User @relation("UserFollowing", fields: [followerId], references: [id], onDelete: Cascade)
+  follower User @relation(
+    "UserFollowing",
+    fields: [followerId],
+    references: [id],
+    onDelete: Cascade
+  )
 
   followingId Int
-  following User @relation("UserFollowers", fields: [followingId], references: [id], onDelete: Cascade)
+  following User @relation(
+    "UserFollowers",
+    fields: [followingId],
+    references: [id],
+    onDelete: Cascade
+  )
 
   createdAt DateTime @default(now())
 
@@ -296,10 +393,20 @@ model FollowRequest {
   id Int @id @default(autoincrement())
 
   requesterId Int
-  requester User @relation("FollowRequestsSent", fields: [requesterId], references: [id], onDelete: Cascade)
+  requester User @relation(
+    "FollowRequestsSent",
+    fields: [requesterId],
+    references: [id],
+    onDelete: Cascade
+  )
 
   targetId Int
-  target User @relation("FollowRequestsReceived", fields: [targetId], references: [id], onDelete: Cascade)
+  target User @relation(
+    "FollowRequestsReceived",
+    fields: [targetId],
+    references: [id],
+    onDelete: Cascade
+  )
 
   status FollowRequestStatus @default(PENDING)
 
@@ -324,6 +431,7 @@ model Conversation {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@index([directKey])
   @@index([updatedAt])
 }
 
@@ -331,10 +439,18 @@ model ConversationMember {
   id Int @id @default(autoincrement())
 
   conversationId Int
-  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  conversation Conversation @relation(
+    fields: [conversationId],
+    references: [id],
+    onDelete: Cascade
+  )
 
   userId Int
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(
+    fields: [userId],
+    references: [id],
+    onDelete: Cascade
+  )
 
   joinedAt DateTime @default(now())
 
@@ -347,13 +463,27 @@ model Message {
   id Int @id @default(autoincrement())
 
   conversationId Int
-  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  conversation Conversation @relation(
+    fields: [conversationId],
+    references: [id],
+    onDelete: Cascade
+  )
 
   senderId Int
-  sender User @relation("MessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+  sender User @relation(
+    "MessageSender",
+    fields: [senderId],
+    references: [id],
+    onDelete: Cascade
+  )
 
   receiverId Int
-  receiver User @relation("MessageReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
+  receiver User @relation(
+    "MessageReceiver",
+    fields: [receiverId],
+    references: [id],
+    onDelete: Cascade
+  )
 
   type MessageType @default(TEXT)
 
@@ -378,19 +508,37 @@ model Notification {
   id Int @id @default(autoincrement())
 
   recipientId Int
-  recipient User @relation("NotificationRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+  recipient User @relation(
+    "NotificationRecipient",
+    fields: [recipientId],
+    references: [id],
+    onDelete: Cascade
+  )
 
   actorId Int?
-  actor User? @relation("NotificationActor", fields: [actorId], references: [id], onDelete: Cascade)
+  actor User? @relation(
+    "NotificationActor",
+    fields: [actorId],
+    references: [id],
+    onDelete: Cascade
+  )
 
   type NotificationType
   message String
 
   postId Int?
-  post Post? @relation(fields: [postId], references: [id], onDelete: Cascade)
+  post Post? @relation(
+    fields: [postId],
+    references: [id],
+    onDelete: Cascade
+  )
 
   commentId Int?
-  comment Comment? @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  comment Comment? @relation(
+    fields: [commentId],
+    references: [id],
+    onDelete: Cascade
+  )
 
   isRead Boolean @default(false)
 
@@ -401,17 +549,27 @@ model Notification {
   @@index([createdAt])
 }
 
+// =====================================================
+// STORIES
+// =====================================================
+
 model Story {
   id Int @id @default(autoincrement())
 
   userId Int
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(
+    fields: [userId],
+    references: [id],
+    onDelete: Cascade
+  )
 
   mediaUrl String?
   mediaType MediaType @default(IMAGE)
 
   text String?
   durationSeconds Int?
+
+  views StoryView[]
 
   createdAt DateTime @default(now())
   expiresAt DateTime
@@ -420,11 +578,45 @@ model Story {
   @@index([expiresAt])
 }
 
+model StoryView {
+  id Int @id @default(autoincrement())
+
+  storyId Int
+  story Story @relation(
+    fields: [storyId],
+    references: [id],
+    onDelete: Cascade
+  )
+
+  viewerId Int
+  viewer User @relation(
+    "StoryViewer",
+    fields: [viewerId],
+    references: [id],
+    onDelete: Cascade
+  )
+
+  viewedAt DateTime @default(now())
+
+  @@unique([storyId, viewerId])
+  @@index([storyId])
+  @@index([viewerId])
+}
+
+// =====================================================
+// LIVE
+// =====================================================
+
 model LiveSession {
   id Int @id @default(autoincrement())
 
   hostId Int
-  host User @relation("LiveHost", fields: [hostId], references: [id], onDelete: Cascade)
+  host User @relation(
+    "LiveHost",
+    fields: [hostId],
+    references: [id],
+    onDelete: Cascade
+  )
 
   title String?
 
@@ -433,6 +625,10 @@ model LiveSession {
   startedAt DateTime?
   endedAt DateTime?
 
+  viewers LiveViewer[]
+  messages LiveMessage[]
+  gifts Gift[]
+
   createdAt DateTime @default(now())
 
   @@index([hostId])
@@ -440,23 +636,102 @@ model LiveSession {
   @@index([createdAt])
 }
 
+model LiveViewer {
+  id Int @id @default(autoincrement())
+
+  liveSessionId Int
+  liveSession LiveSession @relation(
+    fields: [liveSessionId],
+    references: [id],
+    onDelete: Cascade
+  )
+
+  userId Int
+  user User @relation(
+    "LiveViewerUser",
+    fields: [userId],
+    references: [id],
+    onDelete: Cascade
+  )
+
+  joinedAt DateTime @default(now())
+  leftAt DateTime?
+
+  @@unique([liveSessionId, userId])
+  @@index([liveSessionId])
+  @@index([userId])
+}
+
+model LiveMessage {
+  id Int @id @default(autoincrement())
+
+  liveSessionId Int
+  liveSession LiveSession @relation(
+    fields: [liveSessionId],
+    references: [id],
+    onDelete: Cascade
+  )
+
+  senderId Int
+  sender User @relation(
+    "LiveMessageSender",
+    fields: [senderId],
+    references: [id],
+    onDelete: Cascade
+  )
+
+  message String
+
+  createdAt DateTime @default(now())
+
+  @@index([liveSessionId])
+  @@index([senderId])
+  @@index([createdAt])
+}
+
+// =====================================================
+// REPORTS
+// =====================================================
+
 model Report {
   id Int @id @default(autoincrement())
 
   reporterId Int
-  reporter User @relation("ReportCreator", fields: [reporterId], references: [id], onDelete: Cascade)
+  reporter User @relation(
+    "ReportCreator",
+    fields: [reporterId],
+    references: [id],
+    onDelete: Cascade
+  )
 
   reportedUserId Int?
-  reportedUser User? @relation("ReportedUser", fields: [reportedUserId], references: [id], onDelete: Cascade)
+  reportedUser User? @relation(
+    "ReportedUser",
+    fields: [reportedUserId],
+    references: [id],
+    onDelete: Cascade
+  )
 
   postId Int?
-  post Post? @relation(fields: [postId], references: [id], onDelete: Cascade)
+  post Post? @relation(
+    fields: [postId],
+    references: [id],
+    onDelete: Cascade
+  )
 
   commentId Int?
-  comment Comment? @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  comment Comment? @relation(
+    fields: [commentId],
+    references: [id],
+    onDelete: Cascade
+  )
 
   messageId Int?
-  message Message? @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  message Message? @relation(
+    fields: [messageId],
+    references: [id],
+    onDelete: Cascade
+  )
 
   type ReportType
   reason String
@@ -475,11 +750,438 @@ model Report {
   @@index([messageId])
 }
 
+// =====================================================
+// BLOCKS
+// =====================================================
+
+model Block {
+  id Int @id @default(autoincrement())
+
+  blockerId Int
+  blocker User @relation(
+    "BlockCreator",
+    fields: [blockerId],
+    references: [id],
+    onDelete: Cascade
+  )
+
+  blockedId Int
+  blocked User @relation(
+    "BlockedUser",
+    fields: [blockedId],
+    references: [id],
+    onDelete: Cascade
+  )
+
+  createdAt DateTime @default(now())
+
+  @@unique([blockerId, blockedId])
+  @@index([blockedId])
+  @@index([blockerId])
+}
+
+// =====================================================
+// MUTES
+// =====================================================
+
+model Mute {
+  id Int @id @default(autoincrement())
+
+  muterId Int
+  muter User @relation(
+    "MuteCreator",
+    fields: [muterId],
+    references: [id],
+    onDelete: Cascade
+  )
+
+  mutedId Int
+  muted User @relation(
+    "MutedUser",
+    fields: [mutedId],
+    references: [id],
+    onDelete: Cascade
+  )
+
+  createdAt DateTime @default(now())
+
+  @@unique([muterId, mutedId])
+  @@index([mutedId])
+  @@index([muterId])
+}
+
+// =====================================================
+// COMMUNITIES
+// =====================================================
+
+model Community {
+  id Int @id @default(autoincrement())
+
+  name String
+  slug String @unique
+  description String?
+  avatarUrl String?
+  bannerUrl String?
+
+  ownerId Int
+  owner User @relation(
+    "CommunityOwner",
+    fields: [ownerId],
+    references: [id],
+    onDelete: Cascade
+  )
+
+  status CommunityStatus @default(ACTIVE)
+
+  members CommunityMember[]
+  posts Post[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([ownerId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model CommunityMember {
+  id Int @id @default(autoincrement())
+
+  communityId Int
+  community Community @relation(
+    fields: [communityId],
+    references: [id],
+    onDelete: Cascade
+  )
+
+  userId Int
+  user User @relation(
+    fields: [userId],
+    references: [id],
+    onDelete: Cascade
+  )
+
+  role CommunityMemberRole @default(MEMBER)
+
+  joinedAt DateTime @default(now())
+
+  @@unique([communityId, userId])
+  @@index([communityId])
+  @@index([userId])
+  @@index([role])
+}
+
+// =====================================================
+// CREATOR PROFILE
+// =====================================================
+
+model CreatorProfile {
+  id Int @id @default(autoincrement())
+
+  userId Int @unique
+  user User @relation(
+    fields: [userId],
+    references: [id],
+    onDelete: Cascade
+  )
+
+  displayName String?
+  category String?
+
+  monetizationEnabled Boolean @default(false)
+  payoutEnabled Boolean @default(false)
+
+  totalViews BigInt @default(0)
+  totalLikes BigInt @default(0)
+  totalFollowers BigInt @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([monetizationEnabled])
+}
+
+// =====================================================
+// VERIFICATION
+// =====================================================
+
+model VerificationApplication {
+  id Int @id @default(autoincrement())
+
+  userId Int
+  user User @relation(
+    fields: [userId],
+    references: [id],
+    onDelete: Cascade
+  )
+
+  status VerificationStatus @default(PENDING)
+
+  reason String?
+  reviewNote String?
+
+  reviewedById Int?
+  reviewedBy User? @relation(
+    "VerificationReviewer",
+    fields: [reviewedById],
+    references: [id],
+    onDelete: SetNull
+  )
+
+  createdAt DateTime @default(now())
+  reviewedAt DateTime?
+
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model VerificationProgram {
+  id Int @id @default(autoincrement())
+
+  name String @default("OTA X Early Creator Verification")
+
+  enabled Boolean @default(true)
+
+  startsAt DateTime?
+  endsAt DateTime?
+
+  minimumFollowers Int @default(500)
+  minimumPosts Int @default(20)
+  minimumAccountAgeDays Int @default(30)
+
+  updatedAt DateTime @updatedAt
+
+  @@index([enabled])
+  @@index([endsAt])
+}
+
+// =====================================================
+// WALLET
+// =====================================================
+
+model Wallet {
+  id Int @id @default(autoincrement())
+
+  userId Int @unique
+  user User @relation(
+    fields: [userId],
+    references: [id],
+    onDelete: Cascade
+  )
+
+  coinBalance BigInt @default(0)
+
+  availableEarnings Decimal @default(0) @db.Decimal(18, 2)
+  pendingEarnings Decimal @default(0) @db.Decimal(18, 2)
+  lifetimeEarnings Decimal @default(0) @db.Decimal(18, 2)
+
+  currency String @default("USD")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  transactions WalletTransaction[]
+
+  @@index([currency])
+}
+
+// =====================================================
+// WALLET TRANSACTIONS
+// =====================================================
+
+model WalletTransaction {
+  id Int @id @default(autoincrement())
+
+  userId Int
+  user User @relation(
+    "UserWalletTransactions",
+    fields: [userId],
+    references: [id],
+    onDelete: Cascade
+  )
+
+  walletId Int
+  wallet Wallet @relation(
+    fields: [walletId],
+    references: [id],
+    onDelete: Cascade
+  )
+
+  type WalletTransactionType
+
+  amount Decimal @db.Decimal(18, 2)
+  coinAmount BigInt?
+
+  currency String @default("USD")
+
+  reference String @unique
+  description String?
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([walletId])
+  @@index([type])
+  @@index([createdAt])
+}
+
+// =====================================================
+// COIN PURCHASES
+// =====================================================
+
+model CoinPurchase {
+  id Int @id @default(autoincrement())
+
+  buyerId Int
+  buyer User @relation(
+    "CoinBuyer",
+    fields: [buyerId],
+    references: [id],
+    onDelete: Cascade
+  )
+
+  coinAmount BigInt
+
+  amount Decimal @db.Decimal(18, 2)
+  currency String
+
+  paymentReference String @unique
+
+  status String @default("PENDING")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([buyerId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// =====================================================
+// GIFTS
+// =====================================================
+
+model Gift {
+  id Int @id @default(autoincrement())
+
+  senderId Int
+  sender User @relation(
+    "GiftSender",
+    fields: [senderId],
+    references: [id],
+    onDelete: Cascade
+  )
+
+  recipientId Int
+  recipient User @relation(
+    "GiftRecipient",
+    fields: [recipientId],
+    references: [id],
+    onDelete: Cascade
+  )
+
+  liveSessionId Int?
+  liveSession LiveSession? @relation(
+    fields: [liveSessionId],
+    references: [id],
+    onDelete: SetNull
+  )
+
+  giftName String
+
+  coinValue BigInt
+
+  platformFee Decimal @default(0) @db.Decimal(18, 2)
+  creatorEarning Decimal @default(0) @db.Decimal(18, 2)
+
+  status GiftStatus @default(SENT)
+
+  createdAt DateTime @default(now())
+
+  @@index([senderId])
+  @@index([recipientId])
+  @@index([liveSessionId])
+  @@index([createdAt])
+}
+
+// =====================================================
+// PAYOUT REQUESTS
+// =====================================================
+
+model PayoutRequest {
+  id Int @id @default(autoincrement())
+
+  userId Int
+  user User @relation(
+    fields: [userId],
+    references: [id],
+    onDelete: Cascade
+  )
+
+  amount Decimal @db.Decimal(18, 2)
+  currency String
+
+  status PayoutStatus @default(PENDING)
+
+  paymentMethod String?
+  paymentReference String?
+
+  failureReason String?
+
+  createdAt DateTime @default(now())
+  processedAt DateTime?
+
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// =====================================================
+// POST VIEWS / ANALYTICS
+// =====================================================
+
+model PostView {
+  id Int @id @default(autoincrement())
+
+  postId Int
+  post Post @relation(
+    fields: [postId],
+    references: [id],
+    onDelete: Cascade
+  )
+
+  viewerId Int?
+  viewer User? @relation(
+    "PostViewer",
+    fields: [viewerId],
+    references: [id],
+    onDelete: SetNull
+  )
+
+  watchSeconds Int?
+  completed Boolean @default(false)
+
+  createdAt DateTime @default(now())
+
+  @@index([postId])
+  @@index([viewerId])
+  @@index([createdAt])
+}
+
+// =====================================================
+// USER SETTINGS
+// =====================================================
+
 model UserSettings {
   id Int @id @default(autoincrement())
 
   userId Int @unique
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(
+    fields: [userId],
+    references: [id],
+    onDelete: Cascade
+  )
 
   darkMode Boolean @default(true)
 
