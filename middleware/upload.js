@@ -2,7 +2,20 @@ const multer = require('multer');
 
 const storage = multer.memoryStorage();
 
-const allowedAudioTypes = [
+const allowedMimeTypes = [
+  // Images
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/gif',
+
+  // Videos
+  'video/mp4',
+  'video/webm',
+  'video/quicktime',
+  'video/x-matroska',
+
+  // Audio / voice comments
   'audio/mpeg',
   'audio/mp4',
   'audio/webm',
@@ -17,14 +30,14 @@ const upload = multer({
   storage,
 
   limits: {
-    fileSize: 10 * 1024 * 1024
+    fileSize: 100 * 1024 * 1024
   },
 
   fileFilter: (req, file, cb) => {
-    if (!allowedAudioTypes.includes(file.mimetype)) {
+    if (!allowedMimeTypes.includes(file.mimetype)) {
       return cb(
         new Error(
-          'Invalid audio format. Supported formats are MP3, MP4/M4A, WebM, OGG, WAV and AAC.'
+          'Unsupported media format.'
         )
       );
     }
