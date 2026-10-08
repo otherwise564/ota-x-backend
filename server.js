@@ -17,6 +17,7 @@ const favoriteRoutes = require('./routes/favoriteRoutes');
 const shareRoutes = require('./routes/shareRoutes');
 const repostRoutes = require('./routes/repostRoutes');
 const settingsRoutes = require('./routes/settingsRoutes');
+const mediaRoutes = require('./routes/mediaRoutes');
 
 // =====================================================
 // APP
@@ -169,6 +170,7 @@ app.use('/api/reposts', repostRoutes);
 // =====================================================
 
 app.use('/api/settings', settingsRoutes);
+app.use('/api/media', mediaRoutes);
 
 // =====================================================
 // 404 HANDLER
