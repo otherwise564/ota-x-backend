@@ -479,3 +479,162 @@ exports.login = async (req, res) => {
     });
   }
 };
+
+const PASSWORD_RESET_CODE_EXPIRY_MINUTES = 10;
+
+function generatePasswordResetCode() {
+  return crypto.randomInt(100000, 1000000).toString();
+}
+
+function getPasswordResetExpiry() {
+  return new Date(
+    Date.now() + PASSWORD_RESET_CODE_EXPIRY_MINUTES * 60 * 1000
+  );
+}
+
+async function sendPasswordResetEmail(email, code) {
+  await transporter.sendMail({
+    from: process.env.EMAIL_USER,
+    to: email,
+    subject: 'OTA X Password Reset Code',
+    text: `Your OTA X password reset code is ${code}. It expires in ${PASSWORD_RESET_CODE_EXPIRY_MINUTES} minutes.`
+  });
+}
+
+exports.forgotPassword = async (req, res) => {
+  try {
+    const email = normalizeEmail(req.body.email);
+
+    if (!email) {
+      return res.status(400).json({
+        error: 'Email is required.'
+      });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { email }
+    });
+
+    if (!user || !user.isActive) {
+      return res.status(200).json({
+        message: 'If an account with that email exists, a password reset code has been sent.'
+      });
+    }
+
+    const code = generatePasswordResetCode();
+    const expiresAt = getPasswordResetExpiry();
+
+    try {
+      await sendPasswordResetEmail(email, code);
+    } catch (emailError) {
+      console.error('PASSWORD RESET EMAIL ERROR:', emailError);
+
+      return res.status(503).json({
+        error: 'Unable to send password reset email right now.'
+      });
+    }
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        passwordResetCode: code,
+        passwordResetExpiresAt: expiresAt
+      }
+    });
+
+    return res.status(200).json({
+      message: 'If an account with that email exists, a password reset code has been sent.'
+    });
+
+  } catch (error) {
+    console.error('FORGOT PASSWORD ERROR:', error);
+
+    return res.status(500).json({
+      error: 'Server error while requesting password reset.'
+    });
+  }
+};
+
+exports.resetPassword = async (req, res) => {
+  try {
+    const email = normalizeEmail(req.body.email);
+    const code = String(req.body.code || '').trim();
+    const newPassword = String(req.body.newPassword || '');
+
+    if (!email || !code || !newPassword) {
+      return res.status(400).json({
+        error: 'Email, reset code and new password are required.'
+      });
+    }
+
+    if (!isValidVerificationCode(code)) {
+      return res.status(400).json({
+        error: 'Invalid reset code.'
+      });
+    }
+
+    if (newPassword.length < 8) {
+      return res.status(400).json({
+        error: 'Password must be at least 8 characters.'
+      });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { email }
+    });
+
+    if (!user || !user.isActive) {
+      return res.status(400).json({
+        error: 'Invalid reset request.'
+      });
+    }
+
+    if (!user.passwordResetCode || !user.passwordResetExpiresAt) {
+      return res.status(400).json({
+        error: 'No active password reset request.'
+      });
+    }
+
+    if (new Date() > user.passwordResetExpiresAt) {
+      await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          passwordResetCode: null,
+          passwordResetExpiresAt: null
+        }
+      });
+
+      return res.status(400).json({
+        error: 'Reset code has expired.'
+      });
+    }
+
+    if (user.passwordResetCode !== code) {
+      return res.status(400).json({
+        error: 'Invalid reset code.'
+      });
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 12);
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        password: hashedPassword,
+        passwordResetCode: null,
+        passwordResetExpiresAt: null
+      }
+    });
+
+    return res.status(200).json({
+      message: 'Password reset successful. You can now log in with your new password.'
+    });
+
+  } catch (error) {
+    console.error('RESET PASSWORD ERROR:', error);
+
+    return res.status(500).json({
+      error: 'Server error while resetting password.'
+    });
+  }
+};
