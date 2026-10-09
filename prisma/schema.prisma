@@ -196,6 +196,7 @@ model User {
   payoutRequests PayoutRequest[]
 
   postViews PostView[] @relation("PostViewer")
+  offlineDownloads OfflineDownload[]
 
   settings UserSettings?
 
@@ -237,6 +238,8 @@ model Post {
   reports Report[]
   notifications Notification[]
   views PostView[]
+  guestViews GuestPostView[]
+  offlineDownloads OfflineDownload[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -999,4 +1002,44 @@ model UserSettings {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+
+model GuestSession {
+  id            String          @id @default(cuid())
+  tokenHash     String          @unique
+  videosViewed  Int             @default(0)
+  createdAt     DateTime        @default(now())
+  lastSeenAt    DateTime        @default(now())
+  expiresAt     DateTime
+  videoViews    GuestPostView[]
+
+  @@index([expiresAt])
+}
+
+model GuestPostView {
+  id             Int          @id @default(autoincrement())
+  guestSessionId String
+  guestSession   GuestSession @relation(fields: [guestSessionId], references: [id], onDelete: Cascade)
+  postId         Int
+  post           Post         @relation(fields: [postId], references: [id], onDelete: Cascade)
+  createdAt      DateTime     @default(now())
+
+  @@unique([guestSessionId, postId])
+  @@index([postId])
+  @@index([createdAt])
+}
+
+model OfflineDownload {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  postId    Int
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, postId])
+  @@index([userId])
+  @@index([postId])
+  @@index([createdAt])
 }

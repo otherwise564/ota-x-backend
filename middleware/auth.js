@@ -32,6 +32,22 @@ module.exports = (req, res, next) => {
     );
 
     req.user = decoded;
+
+    // Refresh lastSeenAt at most hourly to reduce database writes.
+    if (Number.isSafeInteger(Number(decoded.id)) && Number(decoded.id) > 0) {
+      const prisma = require('../config/db');
+      prisma.user.updateMany({
+        where: {
+          id: Number(decoded.id),
+          OR: [
+            { lastSeenAt: null },
+            { lastSeenAt: { lt: new Date(Date.now() - 60 * 60 * 1000) } }
+          ]
+        },
+        data: { lastSeenAt: new Date() }
+      }).catch(error => console.error('ACTIVITY TRACKING ERROR:', error.message));
+    }
+
     next();
   } catch (error) {
     return res.status(401).json({

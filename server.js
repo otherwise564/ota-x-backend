@@ -18,6 +18,7 @@ const shareRoutes = require('./routes/shareRoutes');
 const repostRoutes = require('./routes/repostRoutes');
 const settingsRoutes = require('./routes/settingsRoutes');
 const mediaRoutes = require('./routes/mediaRoutes');
+const limitRoutes = require('./routes/limitRoutes');
 
 // =====================================================
 // APP
@@ -170,6 +171,7 @@ app.use('/api/reposts', repostRoutes);
 // =====================================================
 
 app.use('/api/settings', settingsRoutes);
+app.use('/api/limits', limitRoutes);
 app.use('/api/media', mediaRoutes);
 
 // =====================================================
