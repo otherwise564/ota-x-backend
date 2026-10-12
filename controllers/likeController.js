@@ -194,3 +194,41 @@ exports.unlikePost = async (req, res) => {
     });
   }
 };
+
+
+// =====================================================
+// CHECK WHETHER THE LOGGED-IN USER LIKED A POST
+// =====================================================
+exports.getLikeStatus = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const postId = Number(req.params.postId);
+
+    if (!Number.isInteger(postId) || postId <= 0) {
+      return res.status(400).json({ error: "Invalid post ID." });
+    }
+
+    const post = await prisma.post.findUnique({
+      where: { id: postId },
+      select: { id: true }
+    });
+
+    if (!post) {
+      return res.status(404).json({ error: "Post not found." });
+    }
+
+    const like = await prisma.like.findUnique({
+      where: {
+        userId_postId: { userId, postId }
+      },
+      select: { id: true }
+    });
+
+    return res.status(200).json({ liked: Boolean(like) });
+  } catch (error) {
+    console.error("GET LIKE STATUS ERROR:", error);
+    return res.status(500).json({
+      error: "Server error while checking like status."
+    });
+  }
+};
