@@ -139,31 +139,20 @@ exports.register = async (req, res) => {
       }
     });
 
-    try {
-      await sendVerificationEmail(
-        normalizedEmail,
-        verificationCode
-      );
-    } catch (emailError) {
-      console.error(
-        'REGISTER EMAIL ERROR:',
-        emailError
-      );
-
-      // Do not leave an account that cannot receive
-      // its required verification email.
-      await prisma.user.delete({
-        where: {
-          id: newUser.id
-        }
-      });
-
-      return res.status(503).json({
-        error:
-          'We could not send your verification email. Please try again later.'
+    if (process.env.OTA_X_EMAIL_VERIFICATION_REQUIRED !== 'false') {
+      try {
+        await sendVerificationEmail(normalizedEmail, verificationCode);
+      } catch (emailError) {
+        console.error('REGISTER EMAIL ERROR:', emailError);
+        await prisma.user.delete({ where: { id: newUser.id } });
+        return res.status(503).json({ error: 'We could not send your verification email. Please try again later.' });
+      }
+    } else {
+      await prisma.user.update({
+        where: { id: newUser.id },
+        data: { isVerified: true, verificationCode: null, verificationCodeExpiresAt: null }
       });
     }
-
     return res.status(201).json({
       message:
         'Registration successful. Please check your email for your verification code.',
@@ -406,7 +395,10 @@ exports.login = async (req, res) => {
       });
     }
 
-    if (!user.isVerified) {
+    if (
+      process.env.OTA_X_EMAIL_VERIFICATION_REQUIRED !== 'false' &&
+      !user.isVerified
+    ) {
       return res.status(403).json({
         error:
           'Please verify your email address before logging in.'
