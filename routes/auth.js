@@ -8,9 +8,11 @@ const {
   verifyCode,
   resendVerificationCode,
   forgotPassword,
-  resetPassword
+  resetPassword,
+  checkUsernameAvailability
 } = require('../controllers/authController');
 
+router.get('/check-username', checkUsernameAvailability);
 router.post('/register', register);
 router.post('/login', login);
 router.post('/verify-code', verifyCode);

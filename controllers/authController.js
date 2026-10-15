@@ -40,7 +40,7 @@ function normalizeEmail(email) {
 }
 
 function normalizeUsername(username) {
-  return String(username).trim();
+  return String(username).trim().replace(/^@+/, "").toLowerCase();
 }
 
 function isValidUsername(username) {
@@ -74,16 +74,53 @@ async function sendVerificationEmail(email, code) {
 
 exports.register = async (req, res) => {
   try {
-    const { username, email, password } = req.body;
+    const { firstName, lastName, dateOfBirth, username, displayName, email, password } = req.body || {};
 
-    if (!username || !email || !password) {
+    if (!firstName || !lastName || !dateOfBirth || !username || !email || !password) {
       return res.status(400).json({
-        error: 'Username, email and password are required.'
+        error: 'First name, last name, date of birth, username, email and password are required.'
       });
     }
 
     const normalizedUsername = normalizeUsername(username);
     const normalizedEmail = normalizeEmail(email);
+
+    if (typeof firstName !== "string" || !firstName.trim() || firstName.trim().length > 100 || typeof lastName !== "string" || !lastName.trim() || lastName.trim().length > 100) {
+      return res.status(400).json({ error: "Enter a valid first name and last name (maximum 100 characters each)." });
+    }
+
+    if (typeof dateOfBirth !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(dateOfBirth)) {
+      return res.status(400).json({ error: "Date of birth must use YYYY-MM-DD format." });
+    }
+
+    const birthDate = new Date(dateOfBirth + "T00:00:00.000Z");
+    if (Number.isNaN(birthDate.getTime()) || birthDate.toISOString().slice(0, 10) !== dateOfBirth || birthDate > new Date()) {
+      return res.status(400).json({ error: "Enter a valid date of birth that is not in the future." });
+    }
+
+    const normalizedFirstName = firstName.trim();
+    const normalizedLastName = lastName.trim();
+
+    if (
+      displayName !== undefined &&
+      displayName !== null &&
+      typeof displayName !== 'string'
+    ) {
+      return res.status(400).json({
+        error: 'Display name must be text.'
+      });
+    }
+
+    const normalizedDisplayName =
+      typeof displayName === 'string' && displayName.trim()
+        ? displayName.trim()
+        : normalizedUsername;
+
+    if (normalizedDisplayName.length > 50) {
+      return res.status(400).json({
+        error: 'Display name cannot exceed 50 characters.'
+      });
+    }
 
     if (!isValidUsername(normalizedUsername)) {
       return res.status(400).json({
@@ -98,7 +135,7 @@ exports.register = async (req, res) => {
       });
     }
 
-    if (password.length < 8) {
+    if (typeof password !== "string" || password.length < 8) {
       return res.status(400).json({
         error: 'Password must be at least 8 characters long.'
       });
@@ -111,7 +148,7 @@ exports.register = async (req, res) => {
             email: normalizedEmail
           },
           {
-            username: normalizedUsername
+            username: { equals: normalizedUsername, mode: "insensitive" }
           }
         ]
       }
@@ -130,7 +167,11 @@ exports.register = async (req, res) => {
 
     const newUser = await prisma.user.create({
       data: {
+        firstName: normalizedFirstName,
+        lastName: normalizedLastName,
+        dateOfBirth: birthDate,
         username: normalizedUsername,
+        displayName: normalizedDisplayName,
         email: normalizedEmail,
         password: hashedPassword,
         verificationCode,
@@ -147,18 +188,18 @@ exports.register = async (req, res) => {
         await prisma.user.delete({ where: { id: newUser.id } });
         return res.status(503).json({ error: 'We could not send your verification email. Please try again later.' });
       }
-    } else {
-      await prisma.user.update({
-        where: { id: newUser.id },
-        data: { isVerified: true, verificationCode: null, verificationCodeExpiresAt: null }
-      });
     }
     return res.status(201).json({
-      message:
-        'Registration successful. Please check your email for your verification code.',
+      message: process.env.OTA_X_EMAIL_VERIFICATION_REQUIRED === "false"
+        ? "Registration successful. You can now log in."
+        : "Registration successful. Please check your email for your verification code.",
       user: {
         id: newUser.id,
+        firstName: newUser.firstName,
+        lastName: newUser.lastName,
+        dateOfBirth: newUser.dateOfBirth,
         username: newUser.username,
+        displayName: newUser.displayName,
         email: newUser.email,
         role: newUser.role,
         isVerified: newUser.isVerified
@@ -166,13 +207,16 @@ exports.register = async (req, res) => {
     });
 
   } catch (error) {
-    console.error(
-      'REGISTER ERROR:',
-      error
-    );
+    if (error && error.code === "P2002") {
+      return res.status(409).json({
+        error: "Username or email already exists."
+      });
+    }
+
+    console.error("REGISTER ERROR:", error);
 
     return res.status(500).json({
-      error: 'Server error during registration.'
+      error: "Server error during registration."
     });
   }
 };
@@ -366,7 +410,7 @@ exports.resendVerificationCode = async (req, res) => {
 
 exports.login = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email, password } = req.body || {};
 
     if (!email || !password) {
       return res.status(400).json({
@@ -630,6 +674,49 @@ exports.resetPassword = async (req, res) => {
 
     return res.status(500).json({
       error: 'Server error while resetting password.'
+    });
+  }
+};
+
+// Check whether a username is available.
+exports.checkUsernameAvailability = async (req, res) => {
+  try {
+    const rawUsername = req.query.username;
+
+    if (typeof rawUsername !== 'string' || !rawUsername.trim()) {
+      return res.status(400).json({
+        error: 'Username is required.'
+      });
+    }
+
+    const username = normalizeUsername(rawUsername);
+
+    if (!isValidUsername(username)) {
+      return res.status(400).json({
+        available: false,
+        error: 'Username must be 3-30 characters and may contain only letters, numbers, underscores and periods.'
+      });
+    }
+
+    const existingUser = await prisma.user.findFirst({
+      where: {
+        username: {
+          equals: username,
+          mode: 'insensitive'
+        }
+      },
+      select: { id: true }
+    });
+
+    return res.status(200).json({
+      username,
+      available: !existingUser
+    });
+  } catch (error) {
+    console.error('USERNAME AVAILABILITY ERROR:', error);
+
+    return res.status(500).json({
+      error: 'Could not check username availability. Please try again.'
     });
   }
 };

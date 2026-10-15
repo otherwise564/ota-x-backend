@@ -30,6 +30,7 @@ exports.getProfile = async (req, res) => {
       select: {
         id: true,
         username: true,
+        displayName: true,
         avatarUrl: true,
         bio: true,
         isCreatorVerified: true,
@@ -58,6 +59,7 @@ exports.getProfile = async (req, res) => {
       profile: {
         id: user.id,
         username: user.username,
+        displayName: user.displayName,
         avatarUrl: user.avatarUrl,
         bio: user.bio,
         isCreatorVerified: user.isCreatorVerified,
@@ -107,6 +109,7 @@ exports.getPublicProfile = async (req, res) => {
       select: {
         id: true,
         username: true,
+        displayName: true,
         avatarUrl: true,
         bio: true,
         isCreatorVerified: true,
@@ -176,6 +179,7 @@ exports.getPublicProfile = async (req, res) => {
       profile: {
         id: user.id,
         username: user.username,
+        displayName: user.displayName,
         avatarUrl: user.avatarUrl,
         bio: user.bio,
         isCreatorVerified: user.isCreatorVerified,
@@ -213,13 +217,32 @@ exports.updateProfile = async (req, res) => {
   try {
     const userId = req.user.id;
 
-    const {
-      username,
-      bio,
-      avatarUrl
-    } = req.body;
+    const { username, displayName, bio, avatarUrl } = req.body;
 
     const data = {};
+
+    // DISPLAY NAME
+    if (displayName !== undefined) {
+      if (
+        displayName !== null &&
+        typeof displayName !== 'string'
+      ) {
+        return res.status(400).json({
+          error: 'Display name must be text.'
+        });
+      }
+
+      const cleanDisplayName =
+        displayName === null ? null : displayName.trim();
+
+      if (cleanDisplayName && cleanDisplayName.length > 50) {
+        return res.status(400).json({
+          error: 'Display name cannot exceed 50 characters.'
+        });
+      }
+
+      data.displayName = cleanDisplayName || null;
+    }
 
     // -----------------------------
     // USERNAME
@@ -323,7 +346,7 @@ exports.updateProfile = async (req, res) => {
     if (Object.keys(data).length === 0) {
       return res.status(400).json({
         error:
-          'Please provide a username, bio or avatar URL to update.'
+          'Please provide a display name, username, bio or avatar URL to update.'
       });
     }
 
@@ -336,6 +359,7 @@ exports.updateProfile = async (req, res) => {
         select: {
           id: true,
           username: true,
+          displayName: true,
           avatarUrl: true,
           bio: true,
           isCreatorVerified: true,
@@ -358,6 +382,7 @@ exports.updateProfile = async (req, res) => {
       profile: {
         id: updatedUser.id,
         username: updatedUser.username,
+        displayName: updatedUser.displayName,
         avatarUrl: updatedUser.avatarUrl,
         bio: updatedUser.bio,
         isCreatorVerified:

@@ -119,6 +119,10 @@ enum CommunityStatus {
 model User {
   id       Int    @id @default(autoincrement())
   username String @unique
+  firstName String?
+  lastName String?
+  dateOfBirth DateTime?
+  displayName String?
   email    String @unique
   password String
 
