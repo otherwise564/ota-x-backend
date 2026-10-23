@@ -74,16 +74,32 @@ async function sendVerificationEmail(email, code) {
 
 exports.register = async (req, res) => {
   try {
-    const { firstName, lastName, dateOfBirth, username, displayName, email, password } = req.body || {};
+    if (
+      process.env.OTA_X_EMAIL_VERIFICATION_REQUIRED === 'false' &&
+      !process.env.JWT_SECRET
+    ) {
+      return res.status(500).json({
+        error: 'Authentication service is not configured.'
+      });
+    }
 
-    if (!firstName || !lastName || !dateOfBirth || !username || !email || !password) {
+    const { firstName, lastName, dateOfBirth, username, displayName, email, phoneNumber, password } = req.body || {};
+
+    if (!firstName || !lastName || !dateOfBirth || !username || !email || !phoneNumber || !password) {
       return res.status(400).json({
-        error: 'First name, last name, date of birth, username, email and password are required.'
+        error: 'First name, last name, date of birth, username, email, phone number and password are required.'
       });
     }
 
     const normalizedUsername = normalizeUsername(username);
     const normalizedEmail = normalizeEmail(email);
+    const normalizedPhoneNumber = String(phoneNumber).trim().replace(/[^\d+]/g, "");
+
+    if (!/^\+[1-9]\d{7,14}$/.test(normalizedPhoneNumber)) {
+      return res.status(400).json({
+        error: "Enter a valid phone number including its international country code."
+      });
+    }
 
     if (typeof firstName !== "string" || !firstName.trim() || firstName.trim().length > 100 || typeof lastName !== "string" || !lastName.trim() || lastName.trim().length > 100) {
       return res.status(400).json({ error: "Enter a valid first name and last name (maximum 100 characters each)." });
@@ -149,6 +165,9 @@ exports.register = async (req, res) => {
           },
           {
             username: { equals: normalizedUsername, mode: "insensitive" }
+          },
+          {
+            phoneNumber: normalizedPhoneNumber
           }
         ]
       }
@@ -156,7 +175,7 @@ exports.register = async (req, res) => {
 
     if (existingUser) {
       return res.status(400).json({
-        error: 'Username or email already exists.'
+        error: 'Username, email or phone number already exists.'
       });
     }
 
@@ -173,6 +192,7 @@ exports.register = async (req, res) => {
         username: normalizedUsername,
         displayName: normalizedDisplayName,
         email: normalizedEmail,
+        phoneNumber: normalizedPhoneNumber,
         password: hashedPassword,
         verificationCode,
         verificationCodeExpiresAt,
@@ -189,10 +209,30 @@ exports.register = async (req, res) => {
         return res.status(503).json({ error: 'We could not send your verification email. Please try again later.' });
       }
     }
+    let token;
+
+    if (process.env.OTA_X_EMAIL_VERIFICATION_REQUIRED === 'false') {
+      token = jwt.sign(
+        {
+          id: newUser.id,
+          email: newUser.email,
+          role: newUser.role
+        },
+        process.env.JWT_SECRET,
+        { expiresIn: '1d' }
+      );
+
+      await prisma.user.update({
+        where: { id: newUser.id },
+        data: { lastSeenAt: new Date() }
+      });
+    }
+
     return res.status(201).json({
-      message: process.env.OTA_X_EMAIL_VERIFICATION_REQUIRED === "false"
-        ? "Registration successful. You can now log in."
-        : "Registration successful. Please check your email for your verification code.",
+      message: process.env.OTA_X_EMAIL_VERIFICATION_REQUIRED === 'false'
+        ? 'Registration successful. You are now logged in.'
+        : 'Registration successful. Please check your email for your verification code.',
+      ...(token ? { token } : {}),
       user: {
         id: newUser.id,
         firstName: newUser.firstName,
@@ -201,15 +241,17 @@ exports.register = async (req, res) => {
         username: newUser.username,
         displayName: newUser.displayName,
         email: newUser.email,
+        phoneNumber: newUser.phoneNumber,
         role: newUser.role,
-        isVerified: newUser.isVerified
+        isVerified: newUser.isVerified,
+        isCreatorVerified: newUser.isCreatorVerified
       }
     });
 
   } catch (error) {
     if (error && error.code === "P2002") {
       return res.status(409).json({
-        error: "Username or email already exists."
+        error: "Username, email or phone number already exists."
       });
     }
 
