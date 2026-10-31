@@ -1,19 +1,12 @@
-const jwt = require('jsonwebtoken');
+const supabase = require('../config/supabase');
+const prisma = require('../config/db');
 
-module.exports = (req, res, next) => {
+module.exports = async (req, res, next) => {
   const authHeader = req.headers.authorization;
 
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return res.status(401).json({
       error: 'Access denied. No token provided.'
-    });
-  }
-
-  if (!process.env.JWT_SECRET) {
-    console.error('JWT_SECRET is not configured.');
-
-    return res.status(500).json({
-      error: 'Authentication service is not configured.'
     });
   }
 
@@ -26,32 +19,61 @@ module.exports = (req, res, next) => {
   }
 
   try {
-    const decoded = jwt.verify(
-      token,
-      process.env.JWT_SECRET
-    );
+    const { data, error } = await supabase.auth.getUser(token);
 
-    req.user = decoded;
+    if (error || !data.user) {
+      return res.status(401).json({
+        error: 'Invalid or expired token.'
+      });
+    }
 
-    // Refresh lastSeenAt at most hourly to reduce database writes.
-    if (Number.isSafeInteger(Number(decoded.id)) && Number(decoded.id) > 0) {
-      const prisma = require('../config/db');
+    const profile = await prisma.user.findUnique({
+      where: { supabaseAuthId: data.user.id }
+    });
+
+    if (!profile) {
+      return res.status(401).json({
+        error: 'OTA X user profile not found.'
+      });
+    }
+
+    if (!profile.isActive) {
+      return res.status(403).json({
+        error: 'This account is disabled.'
+      });
+    }
+
+    req.user = {
+      id: profile.id,
+      email: profile.email,
+      username: profile.username,
+      role: profile.role,
+      supabaseAuthId: data.user.id
+    };
+
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+
+    if (!profile.lastSeenAt || profile.lastSeenAt < oneHourAgo) {
       prisma.user.updateMany({
         where: {
-          id: Number(decoded.id),
+          id: profile.id,
           OR: [
             { lastSeenAt: null },
-            { lastSeenAt: { lt: new Date(Date.now() - 60 * 60 * 1000) } }
+            { lastSeenAt: { lt: oneHourAgo } }
           ]
         },
         data: { lastSeenAt: new Date() }
-      }).catch(error => console.error('ACTIVITY TRACKING ERROR:', error.message));
+      }).catch(error => {
+        console.error('Activity tracking error:', error.message);
+      });
     }
 
-    next();
+    return next();
   } catch (error) {
-    return res.status(401).json({
-      error: 'Invalid or expired token.'
+    console.error('Authentication middleware error:', error.message);
+
+    return res.status(500).json({
+      error: 'Authentication service temporarily unavailable.'
     });
   }
 };
