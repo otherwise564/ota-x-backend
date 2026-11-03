@@ -1,0 +1,2 @@
+[functions.ota-api]
+verify_jwt = false
