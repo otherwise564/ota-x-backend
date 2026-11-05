@@ -27,4 +27,5 @@ jobs:
         run: |
           supabase functions deploy ota-api \
             --project-ref uvmbachwdgucniwotoza \
-            --no-verify-jwt
+            --no-verify-jwt \
+            --yes
